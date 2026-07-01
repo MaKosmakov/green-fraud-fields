@@ -13,13 +13,13 @@ A draft PDF is included at [`paper/green_fraud_fields_paper_draft.pdf`](paper/gr
 
 Fraud labels arrive late, but entity histories repeat. The code turns released fraud history into graph features without letting future labels or candidate edges leak into the score. At each scoring time, it builds history from labels that have already been released and computes adaptive Green-risk fields of the form
 
-![Causal Green-field scoring scheme](figures/green_field_scheme.png)
-
 ```text
 S_D = (L + D)^-1 D H
 ```
 
 where `H` is released endpoint history, `D` is a nodewise confidence/precision matrix, and `L` is a graph Laplacian built from historical edges.
+
+![Causal Green-field scoring scheme](figures/green_field_scheme.png)
 
 The repo is intentionally small. It keeps the package code, tests, final experiment runners, and paper figures. Raw datasets and generated experiment outputs are not committed.
 
