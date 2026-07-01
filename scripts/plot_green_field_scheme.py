@@ -30,17 +30,19 @@ def make_scheme(output_dir: Path) -> tuple[Path, Path]:
 
     y_top = 1.08
     y_commit = 0.06
-    width = 1.95
+    width = 1.82
     height = 0.62
-    xs = [0.32, 2.52, 4.72, 6.92]
+    xs = [0.32, 2.56, 4.80, 7.04]
 
     add_box(ax, (xs[0], y_top), "historical graph\n$G_{t^-}$", width, height)
     add_box(ax, (xs[1], y_top), "released history\n$H, D$", width, height)
     add_box(ax, (xs[2], y_top), "local Green solve\n$(L+D)s=DH$", width, height)
     add_box(ax, (xs[3], y_top), "score $x_t$\nbefore insertion", width, height)
+    commit_width = 1.95
+    commit_x = xs[3] + (width - commit_width) / 2
     commit_box = FancyBboxPatch(
-        (xs[3], y_commit),
-        width,
+        (commit_x, y_commit),
+        commit_width,
         height,
         boxstyle="round,pad=0.035,rounding_size=0.06",
         linewidth=1.2,
@@ -53,11 +55,13 @@ def make_scheme(output_dir: Path) -> tuple[Path, Path]:
     ax.text(commit_text_x, y_commit + height * 0.24, "commit edges + releases", ha="center", va="center", fontsize=9)
 
     for i in range(3):
+        start_x = xs[i] + width + 0.04
+        end_x = xs[i + 1] - 0.04
         ax.annotate(
             "",
-            xy=(xs[i + 1] - 0.08, y_top + height / 2),
-            xytext=(xs[i] + width + 0.08, y_top + height / 2),
-            arrowprops=dict(arrowstyle="->", linewidth=1.4, color="black"),
+            xy=(end_x, y_top + height / 2),
+            xytext=(start_x, y_top + height / 2),
+            arrowprops=dict(arrowstyle="-|>", linewidth=1.25, color="black", mutation_scale=12),
         )
     ax.annotate(
         "",
