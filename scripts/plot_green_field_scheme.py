@@ -53,9 +53,9 @@ def make_scheme(output_dir: Path) -> tuple[Path, Path]:
         xytext=(xs[3] + width / 2, y_top - 0.04),
         arrowprops=dict(arrowstyle="->", linewidth=1.4, color="black"),
     )
-    feedback_y = 0.74
+    feedback_y = y_commit + height / 2
     past_center = xs[0] + width / 2
-    commit_left = xs[3] - 0.12
+    commit_left = xs[3]
     ax.plot([commit_left, past_center], [feedback_y, feedback_y], color="0.35", linestyle="--", linewidth=1.1)
     ax.annotate(
         "",
