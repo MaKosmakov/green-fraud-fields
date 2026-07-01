@@ -9,11 +9,11 @@ This repository supports the paper draft:
 
 A draft PDF is included at [`paper/green_fraud_fields_paper_draft.pdf`](paper/green_fraud_fields_paper_draft.pdf).
 
-![Causal Green-field scoring scheme](figures/green_field_scheme.png)
-
 ## Main idea
 
 Fraud labels arrive late, but entity histories repeat. The code turns released fraud history into graph features without letting future labels or candidate edges leak into the score. At each scoring time, it builds history from labels that have already been released and computes adaptive Green-risk fields of the form
+
+![Causal Green-field scoring scheme](figures/green_field_scheme.png)
 
 ```text
 S_D = (L + D)^-1 D H
