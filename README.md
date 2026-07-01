@@ -2,11 +2,18 @@
 
 Code for causal Green-field graph features in fraud and illicit-transaction ranking.
 
-The project is intentionally small. It contains the package code, tests, final experiment runners, and the delay-sweep figure used in the paper-style writeup. Raw datasets and generated experiment outputs are not committed.
+This repository supports the paper draft:
 
-## What this repo does
+> **Adaptive Green Risk Fields for Causal Fraud Detection**  
+> Submission link / DOI: **[placeholder -- to be updated after submission]**
 
-The core idea is to turn released fraud history into graph features without leaking future information. At each scoring time, the code builds history from labels that have already been released and computes adaptive Green-risk fields of the form
+A draft PDF is included at [`paper/green_fraud_fields_paper_draft.pdf`](paper/green_fraud_fields_paper_draft.pdf).
+
+![Causal Green-field scoring scheme](figures/green_field_scheme.png)
+
+## Main idea
+
+Fraud labels arrive late, but entity histories repeat. The code turns released fraud history into graph features without letting future labels or candidate edges leak into the score. At each scoring time, it builds history from labels that have already been released and computes adaptive Green-risk fields of the form
 
 ```text
 S_D = (L + D)^-1 D H
@@ -14,7 +21,9 @@ S_D = (L + D)^-1 D H
 
 where `H` is released endpoint history, `D` is a nodewise confidence/precision matrix, and `L` is a graph Laplacian built from historical edges.
 
-The final code focuses on:
+The repo is intentionally small. It keeps the package code, tests, final experiment runners, and paper figures. Raw datasets and generated experiment outputs are not committed.
+
+The final code covers:
 
 - strict timestamp-block causality for IEEE-CIS;
 - graph-vs-history ablations;
@@ -22,8 +31,7 @@ The final code focuses on:
 - leakage and label-release audits;
 - label-permutation placebo checks;
 - calibration, posterior-uncertainty, warm-start, and bootstrap diagnostics;
-- a small Elliptic++ external check;
-- the reproducible delay-sweep figure.
+- a small Elliptic++ external check.
 
 ## Datasets
 
@@ -75,6 +83,10 @@ python scripts/run_ellipticpp_strict_smoke.py
 python scripts/run_ellipticpp_exact_green.py --radius 1 --cap 50
 python scripts/run_ellipticpp_exact_green.py --radius 2 --cap 50
 python scripts/run_ellipticpp_exact_green_combo.py
+
+# Paper figures.
+python scripts/plot_green_field_scheme.py --output-dir figures
+python scripts/plot_delay_auc_sweep.py --output-dir figures
 ```
 
 For a quick synthetic sanity check instead of the full Kaggle data:
@@ -82,19 +94,6 @@ For a quick synthetic sanity check instead of the full Kaggle data:
 ```powershell
 python scripts/make_smoke_ieee_data.py
 ```
-
-## Reproduce the delay-sweep figure
-
-The figure used in the writeup is committed under `figures/`. To regenerate it:
-
-```powershell
-python scripts/plot_delay_auc_sweep.py --output-dir figures
-```
-
-This creates:
-
-- `figures/fig_delay_auc_sweep.pdf`
-- `figures/fig_delay_auc_sweep.png`
 
 ## Main empirical takeaway
 
@@ -109,6 +108,7 @@ src/green_fraud_fields/   core graph, history, modeling, and causal feature code
 scripts/                  final experiment runners and figure script
 tests/                    unit tests for causal and Green-field components
 figures/                  committed paper-style delay figure
+paper/                    current paper draft; submission link placeholder above
 ```
 
 ## License
