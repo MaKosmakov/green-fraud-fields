@@ -71,9 +71,7 @@ def make_scheme(output_dir: Path) -> tuple[Path, Path]:
     )
     feedback_y = y_commit + height / 2
     past_center = xs[0] + width / 2
-    commit_center = xs[3] + width / 2
-    ax.plot([commit_center, past_center], [feedback_y, feedback_y], color="0.35", linestyle="--", linewidth=1.1)
-    ax.plot(commit_center, feedback_y, marker="o", markersize=3.2, color="0.35")
+    ax.plot([commit_x, past_center], [feedback_y, feedback_y], color="0.35", linestyle="--", linewidth=1.1)
     ax.annotate(
         "",
         xy=(past_center, y_top - 0.04),
