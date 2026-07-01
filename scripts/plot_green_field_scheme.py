@@ -38,7 +38,19 @@ def make_scheme(output_dir: Path) -> tuple[Path, Path]:
     add_box(ax, (xs[1], y_top), "released history\n$H, D$", width, height)
     add_box(ax, (xs[2], y_top), "local Green solve\n$(L+D)s=DH$", width, height)
     add_box(ax, (xs[3], y_top), "score $x_t$\nbefore insertion", width, height)
-    add_box(ax, (xs[3], y_commit), "after timestamp block\ncommit edges + releases", width, height)
+    commit_box = FancyBboxPatch(
+        (xs[3], y_commit),
+        width,
+        height,
+        boxstyle="round,pad=0.035,rounding_size=0.06",
+        linewidth=1.2,
+        edgecolor="black",
+        facecolor="white",
+    )
+    ax.add_patch(commit_box)
+    commit_text_x = xs[3] + width / 2
+    ax.text(commit_text_x, y_commit + height * 0.69, "after timestamp block", ha="center", va="center", fontsize=9)
+    ax.text(commit_text_x, y_commit + height * 0.24, "commit edges + releases", ha="center", va="center", fontsize=9)
 
     for i in range(3):
         ax.annotate(
@@ -55,8 +67,9 @@ def make_scheme(output_dir: Path) -> tuple[Path, Path]:
     )
     feedback_y = y_commit + height / 2
     past_center = xs[0] + width / 2
-    commit_left = xs[3]
-    ax.plot([commit_left, past_center], [feedback_y, feedback_y], color="0.35", linestyle="--", linewidth=1.1)
+    commit_center = xs[3] + width / 2
+    ax.plot([commit_center, past_center], [feedback_y, feedback_y], color="0.35", linestyle="--", linewidth=1.1)
+    ax.plot(commit_center, feedback_y, marker="o", markersize=3.2, color="0.35")
     ax.annotate(
         "",
         xy=(past_center, y_top - 0.04),
