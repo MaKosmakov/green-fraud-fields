@@ -25,48 +25,49 @@ def add_box(ax, xy, text, width=2.15, height=0.7):
 
 def make_scheme(output_dir: Path) -> tuple[Path, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(8.2, 2.25))
+    fig, ax = plt.subplots(figsize=(8.2, 2.45))
     ax.set_axis_off()
 
-    y = 0.82
-    width = 2.05
-    height = 0.68
-    xs = [0.15, 2.45, 4.75, 7.05]
+    y_top = 1.08
+    y_commit = 0.06
+    width = 1.95
+    height = 0.62
+    xs = [0.32, 2.52, 4.72, 6.92]
 
-    add_box(ax, (xs[0], y), "historical graph\n$G_{t^-}$", width, height)
-    add_box(ax, (xs[1], y), "released history\n$H, D$", width, height)
-    add_box(ax, (xs[2], y), "local Green solve\n$(L+D)s=DH$", width, height)
-    add_box(ax, (xs[3], y), "score $x_t$\nbefore insertion", width, height)
-    add_box(ax, (xs[3], 0.02), "after timestamp block\ncommit edges + releases", width, height)
+    add_box(ax, (xs[0], y_top), "historical graph\n$G_{t^-}$", width, height)
+    add_box(ax, (xs[1], y_top), "released history\n$H, D$", width, height)
+    add_box(ax, (xs[2], y_top), "local Green solve\n$(L+D)s=DH$", width, height)
+    add_box(ax, (xs[3], y_top), "score $x_t$\nbefore insertion", width, height)
+    add_box(ax, (xs[3], y_commit), "after timestamp block\ncommit edges + releases", width, height)
 
     for i in range(3):
         ax.annotate(
             "",
-            xy=(xs[i + 1] - 0.08, y + height / 2),
-            xytext=(xs[i] + width + 0.08, y + height / 2),
+            xy=(xs[i + 1] - 0.08, y_top + height / 2),
+            xytext=(xs[i] + width + 0.08, y_top + height / 2),
             arrowprops=dict(arrowstyle="->", linewidth=1.4, color="black"),
         )
     ax.annotate(
         "",
-        xy=(xs[3] + width / 2, 0.02 + height + 0.03),
-        xytext=(xs[3] + width / 2, y - 0.03),
+        xy=(xs[3] + width / 2, y_commit + height + 0.04),
+        xytext=(xs[3] + width / 2, y_top - 0.04),
         arrowprops=dict(arrowstyle="->", linewidth=1.4, color="black"),
     )
-    feedback_y = 0.42
+    feedback_y = 0.74
     past_center = xs[0] + width / 2
     commit_left = xs[3] - 0.12
     ax.plot([commit_left, past_center], [feedback_y, feedback_y], color="0.35", linestyle="--", linewidth=1.1)
     ax.annotate(
         "",
-        xy=(past_center, y - 0.03),
+        xy=(past_center, y_top - 0.04),
         xytext=(past_center, feedback_y),
         arrowprops=dict(arrowstyle="->", linewidth=1.1, color="0.35", linestyle="--"),
     )
 
     outer = FancyBboxPatch(
-        (0.02, 0.72),
-        9.28,
-        0.98,
+        (0.18, 0.92),
+        8.88,
+        0.88,
         boxstyle="round,pad=0.05,rounding_size=0.06",
         linewidth=1.0,
         edgecolor="0.35",
@@ -74,11 +75,11 @@ def make_scheme(output_dir: Path) -> tuple[Path, Path]:
         linestyle="--",
     )
     ax.add_patch(outer)
-    ax.text(4.66, 1.78, "frozen information available at $t^-$", ha="center", va="center", fontsize=9)
+    ax.text(4.62, 1.95, "frozen information available at $t^-$", ha="center", va="center", fontsize=9)
 
-    ax.set_xlim(0, 9.45)
-    ax.set_ylim(0, 1.95)
-    fig.tight_layout(pad=0.4)
+    ax.set_xlim(0, 9.25)
+    ax.set_ylim(0, 2.12)
+    fig.tight_layout(pad=0.55)
 
     png_path = output_dir / "green_field_scheme.png"
     pdf_path = output_dir / "green_field_scheme.pdf"
