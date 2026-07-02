@@ -33,31 +33,31 @@ def make_plot(output_dir: Path) -> tuple[Path, Path]:
     ax.plot(
         DELAYS,
         STATIC_GREEN,
-        color="black",
-        linestyle="-",
+        color="0.65",
+        linestyle="--",
         marker="o",
         markersize=5,
-        linewidth=1.6,
+        linewidth=1.4,
         label="Static Green marginal",
     )
     ax.plot(
         DELAYS,
         ADAPTIVE_TWO_STAGE,
-        color="0.35",
-        linestyle="--",
+        color="black",
+        linestyle="-",
         marker="s",
         markersize=5,
-        linewidth=1.6,
+        linewidth=1.9,
         label="Adaptive two-stage tail",
     )
     ax.plot(
         DELAYS,
         CROSS_FIT_LOGISTIC_TAIL,
-        color="0.60",
+        color="0.30",
         linestyle="-.",
         marker="^",
         markersize=5,
-        linewidth=1.6,
+        linewidth=1.7,
         label="Cross-fit logistic tail",
     )
 

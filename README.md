@@ -2,12 +2,12 @@
 
 Code for causal Green-field graph features in fraud and illicit-transaction ranking.
 
-This repository supports the paper draft:
+This repository supports the paper:
 
 > **Adaptive Green Risk Fields for Causal Fraud Detection**  
 > Submission link / DOI: **[placeholder -- to be updated after submission]**
 
-A draft PDF is included at [`paper/green_fraud_fields_paper_draft.pdf`](paper/green_fraud_fields_paper_draft.pdf).
+A manuscript PDF is included at [`paper/green_fraud_fields_paper.pdf`](paper/green_fraud_fields_paper.pdf).
 
 ## Main idea
 
@@ -75,7 +75,7 @@ python scripts/run_green_leakage_audit.py
 python scripts/run_green_permutation_placebo.py
 python scripts/run_green_calibration_check.py
 python scripts/run_green_posterior_uncertainty.py
-python scripts/run_green_warmstart_v3.py
+python scripts/run_green_warmstart.py
 python scripts/run_green_final_bootstrap_ci.py --replicates 2000
 
 # External Elliptic++ checks.
@@ -108,7 +108,7 @@ src/green_fraud_fields/   core graph, history, modeling, and causal feature code
 scripts/                  final experiment runners and figure script
 tests/                    unit tests for causal and Green-field components
 figures/                  committed paper-style delay figure
-paper/                    current paper draft; submission link placeholder above
+paper/                    current manuscript; submission link placeholder above
 ```
 
 ## License

@@ -64,13 +64,13 @@ def strict_metadata(extra: dict[str, str | int | float]) -> dict[bytes, bytes]:
         b"same_timestamp_policy": b"block_frozen_t_minus",
         b"label_release_policy": b"release_time_strictly_less_than_candidate_timestamp",
         b"warm_start_policy": b"prefix_history_from_all_prior_rows",
-        b"cache_version": b"warmstart_v3",
+        b"cache_version": b"warmstart_block_causal",
     }
     metadata.update({str(k).encode(): str(v).encode() for k, v in extra.items()})
     return metadata
 
 
-def has_v3_metadata(path: Path, *, feature_family: str, window: int) -> bool:
+def has_warmstart_metadata(path: Path, *, feature_family: str, window: int) -> bool:
     if not path.exists():
         return False
     metadata = pq.ParquetFile(path).metadata.metadata or {}
@@ -178,7 +178,7 @@ def build_warmstart_features(args: argparse.Namespace, window: int) -> dict:
     }
 
     base_path = root / "base_features.parquet"
-    if base_path.exists() and not has_v3_metadata(base_path, feature_family="base", window=window):
+    if base_path.exists() and not has_warmstart_metadata(base_path, feature_family="base", window=window):
         base_path.unlink()
     if base_path.exists() and not args.force_features:
         runtime["base"] = {"cached": True}
@@ -205,7 +205,7 @@ def build_warmstart_features(args: argparse.Namespace, window: int) -> dict:
         runtime["base"] = {"cached": False, **causal_runtime, "columns": int(base.shape[1])}
 
     green_path = root / "green_features.parquet"
-    if green_path.exists() and not has_v3_metadata(green_path, feature_family="plain_green", window=window):
+    if green_path.exists() and not has_warmstart_metadata(green_path, feature_family="plain_green", window=window):
         green_path.unlink()
     if green_path.exists() and not args.force_features:
         runtime["green"] = {"cached": True}
@@ -246,7 +246,7 @@ def build_warmstart_features(args: argparse.Namespace, window: int) -> dict:
         }
 
     precision_path = root / "precision_weighted_green.parquet"
-    if precision_path.exists() and not has_v3_metadata(precision_path, feature_family="precision_green", window=window):
+    if precision_path.exists() and not has_warmstart_metadata(precision_path, feature_family="precision_green", window=window):
         precision_path.unlink()
     if precision_path.exists() and not args.force_features:
         runtime["precision"] = {"cached": True}
@@ -606,7 +606,7 @@ def write_aggregate_outputs(args: argparse.Namespace) -> None:
     aggregate_gains(summary, "M3_H_raw").to_csv(root / "mean_gains_vs_history.csv", index=False)
     aggregate_vs_v2(summary, Path(args.v2_summary)).to_csv(root / "mean_deltas_vs_v2.csv", index=False)
     report = [
-        "# Warm-start v3 block-causal run",
+        "# Warm-start block-causal run",
         "",
         "Strict timestamp-block features with graph/history warm-started from all prior rows in the global chronology.",
         "No Random Forest and no test-label tuning.",
@@ -623,14 +623,14 @@ def write_aggregate_outputs(args: argparse.Namespace) -> None:
         "",
         aggregate_vs_v2(summary, Path(args.v2_summary)).to_csv(index=False),
     ]
-    (root / "warmstart_v3_report.md").write_text("\n".join(report), encoding="utf-8")
+    (root / "warmstart_report.md").write_text("\n".join(report), encoding="utf-8")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", default="data/raw/ieee_cis")
     parser.add_argument("--data-cache-dir", default="data/processed")
-    parser.add_argument("--out-dir", default="outputs/ieee_green_final_review_gates_v3_warmstart_block_causal")
+    parser.add_argument("--out-dir", default="outputs/ieee_green_warmstart_block_causal")
     parser.add_argument("--v2-summary", default="outputs/ieee_green_final_review_gates_v2_block_causal/01_graph_vs_history/window_summary.csv")
     parser.add_argument("--window-size", type=int, default=100000)
     parser.add_argument("--windows", default="0,1,2,3,4")
