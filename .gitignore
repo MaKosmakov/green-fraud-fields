@@ -11,7 +11,10 @@ dist/
 data/
 outputs/
 
-# Local paper builds
+# Local manuscript files are kept out of the repository for now.
+paper/
+
+# Local LaTeX builds
 *.aux
 *.bbl
 *.blg

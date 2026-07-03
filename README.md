@@ -2,13 +2,6 @@
 
 Code for causal Green-field graph features in fraud and illicit-transaction ranking.
 
-This repository supports the paper:
-
-> **Adaptive Green Risk Fields for Causal Fraud Detection**  
-> Submission link / DOI: **[placeholder -- to be updated after submission]**
-
-A manuscript PDF is included at [`paper/green_fraud_fields_paper.pdf`](paper/green_fraud_fields_paper.pdf).
-
 ## Main idea
 
 Fraud labels arrive late, but entity histories repeat. The code turns released fraud history into graph features without letting future labels or candidate edges leak into the score. At each scoring time, it builds history from labels that have already been released and computes adaptive Green-risk fields of the form
@@ -21,7 +14,7 @@ where `H` is released endpoint history, `D` is a nodewise confidence/precision m
 
 ![Causal Green-field scoring scheme](figures/green_field_scheme.png)
 
-The repo is intentionally small. It keeps the package code, tests, final experiment runners, and paper figures. Raw datasets and generated experiment outputs are not committed.
+The repo is intentionally small. It keeps the package code, tests, final experiment runners, and figures. Raw datasets and generated experiment outputs are not committed.
 
 The final code covers:
 
@@ -57,7 +50,7 @@ python -m pip install -e .
 python -m pytest
 ```
 
-## Reproduce the paper-style runs
+## Reproduce the main runs
 
 The runners write to `outputs/`. The important ones are:
 
@@ -84,7 +77,7 @@ python scripts/run_ellipticpp_exact_green.py --radius 1 --cap 50
 python scripts/run_ellipticpp_exact_green.py --radius 2 --cap 50
 python scripts/run_ellipticpp_exact_green_combo.py
 
-# Paper figures.
+# Figures.
 python scripts/plot_green_field_scheme.py --output-dir figures
 python scripts/plot_delay_auc_sweep.py --output-dir figures
 ```
@@ -107,8 +100,7 @@ On Elliptic++, raw released address history transfers well, but exact local smoo
 src/green_fraud_fields/   core graph, history, modeling, and causal feature code
 scripts/                  final experiment runners and figure script
 tests/                    unit tests for causal and Green-field components
-figures/                  committed paper-style delay figure
-paper/                    current manuscript; submission link placeholder above
+figures/                  committed figures
 ```
 
 ## License
