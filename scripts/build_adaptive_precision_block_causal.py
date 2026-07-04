@@ -45,6 +45,24 @@ def run_window(args: argparse.Namespace, window: int) -> dict:
         force_cache=args.force_data_cache,
     )
     data = data.iloc[window * args.window_size : (window + 1) * args.window_size].reset_index(drop=True)
+    if data.empty:
+        payload = {
+            "window": window,
+            "seconds": time.time() - started,
+            "rows": 0,
+            "skipped": True,
+            "reason": "window outside available data",
+            "delay": args.delay,
+            "alpha": args.alpha,
+            "precision_alpha": args.precision_alpha,
+            "causal_policy": "strict_timestamp_block",
+            "same_timestamp_policy": "block_frozen_t_minus",
+            "label_release_policy": "release_time_strictly_less_than_candidate_timestamp",
+            "runtime": {"skipped": True},
+        }
+        save_json(out / "precision_feature_runtime.json", payload)
+        print(json.dumps(payload, indent=2), flush=True)
+        return payload
 
     if path.exists() and has_block_causal_metadata(path, args.delay) and not args.force:
         runtime = {"cached": True, "path": str(path)}
@@ -117,4 +135,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

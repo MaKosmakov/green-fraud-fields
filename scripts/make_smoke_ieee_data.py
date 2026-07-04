@@ -9,8 +9,8 @@ import pandas as pd
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out-dir", default="data/processed/ieee_smoke")
-    parser.add_argument("--rows", type=int, default=2000)
+    parser.add_argument("--out-dir", default="data/raw/ieee_cis")
+    parser.add_argument("--rows", type=int, default=600)
     parser.add_argument("--seed", type=int, default=7)
     args = parser.parse_args()
     rng = np.random.default_rng(args.seed)
@@ -23,7 +23,7 @@ def main() -> None:
     amount = rng.lognormal(3.5, 1.0, n)
     burst = (card % 17 == 0) & (amount > np.quantile(amount, .75))
     new_pair = ((card + addr) % 23 == 0)
-    probability = np.clip(.015 + .20 * burst + .10 * new_pair, 0, .8)
+    probability = np.clip(.04 + .25 * burst + .15 * new_pair, 0, .8)
     fraud = rng.binomial(1, probability)
     transaction = pd.DataFrame({
         "TransactionID": np.arange(1, n + 1),
@@ -53,5 +53,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

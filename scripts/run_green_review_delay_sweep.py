@@ -111,6 +111,24 @@ def run_delay_window(args: argparse.Namespace, delay: int, window: int) -> dict:
     root = Path(args.out_dir)
     out = delay_dir(root, delay, window)
     out.mkdir(parents=True, exist_ok=True)
+    baseline_window = Path(args.baseline_dir) / f"window_{window}"
+    required_inputs = [
+        baseline_window / "base_features.parquet",
+        baseline_window / "green_features.parquet",
+    ]
+    missing_inputs = [str(path) for path in required_inputs if not path.exists()]
+    if missing_inputs:
+        runtime = {
+            "seconds": timer.total(),
+            "window": window,
+            "delay": delay,
+            "skipped": True,
+            "reason": "missing feature inputs",
+            "missing_inputs": missing_inputs,
+        }
+        save_json(out / "runtime.json", runtime)
+        print(json.dumps(runtime, indent=2), flush=True)
+        return {"summary": [], "cohorts": [], "runtime": runtime}
 
     data = load_ieee_cis_cached(
         args.data_dir,
@@ -119,6 +137,17 @@ def run_delay_window(args: argparse.Namespace, delay: int, window: int) -> dict:
         force_cache=args.force_data_cache,
     )
     data = data.iloc[window * args.window_size : (window + 1) * args.window_size].reset_index(drop=True)
+    if data.empty:
+        runtime = {
+            "seconds": timer.total(),
+            "window": window,
+            "delay": delay,
+            "skipped": True,
+            "reason": "window outside available data",
+        }
+        save_json(out / "runtime.json", runtime)
+        print(json.dumps(runtime, indent=2), flush=True)
+        return {"summary": [], "cohorts": [], "runtime": runtime}
     y = data["isFraud"].to_numpy(int)
     train, valid, test = chronological_split(len(data))
     timer.mark("load_data")
@@ -266,12 +295,16 @@ def aggregate_gains(summary: pd.DataFrame, baseline_model: str) -> pd.DataFrame:
                 continue
             group = group.set_index("window").sort_index()
             common = group.index.intersection(baseline.index)
+            if len(common) == 0:
+                continue
             out = {"delay": delay, "model": model, "baseline": baseline_model, "windows": int(len(common))}
             for metric in METRICS:
                 delta = group.loc[common, metric] - baseline.loc[common, metric]
                 out[f"mean_gain_{metric}"] = float(delta.mean())
                 out[f"win_count_{metric}"] = int((delta > 0).sum())
             rows.append(out)
+    if not rows:
+        return pd.DataFrame()
     return pd.DataFrame(rows).sort_values(["delay", "mean_gain_precision_at_0.01"], ascending=[True, False])
 
 
@@ -288,12 +321,16 @@ def graph_marginal(summary: pd.DataFrame) -> pd.DataFrame:
             model_rows = delay_rows[delay_rows["model"] == model].set_index("window")
             base_rows = delay_rows[delay_rows["model"] == baseline_model].set_index("window")
             common = model_rows.index.intersection(base_rows.index)
+            if len(common) == 0:
+                continue
             out = {"delay": delay, "comparison": comparison, "model": model, "baseline": baseline_model, "windows": int(len(common))}
             for metric in METRICS:
                 delta = model_rows.loc[common, metric] - base_rows.loc[common, metric]
                 out[f"mean_gain_{metric}"] = float(delta.mean())
                 out[f"win_count_{metric}"] = int((delta > 0).sum())
             rows.append(out)
+    if not rows:
+        return pd.DataFrame()
     return pd.DataFrame(rows).sort_values(["delay", "comparison"])
 
 
@@ -315,6 +352,8 @@ def aggregate_cohort_gains(cohorts: pd.DataFrame, baseline_model: str = "M3_H_ra
                 out[f"mean_gain_{metric}"] = float(delta.mean())
                 out[f"win_count_{metric}"] = int((delta > 0).sum())
             rows.append(out)
+    if not rows:
+        return pd.DataFrame()
     return pd.DataFrame(rows).sort_values(["delay", "cohort", "mean_gain_precision_at_0.01"], ascending=[True, True, False])
 
 
@@ -335,23 +374,29 @@ def write_aggregate_outputs(root: Path) -> None:
     for path in sorted(sweep_root.glob("delay_*/window_*/runtime.json")):
         runtimes[f"{path.parent.parent.name}/{path.parent.name}"] = json.loads(path.read_text(encoding="utf-8"))
 
+    if not summaries:
+        save_json(sweep_root / "runtime.json", runtimes)
+        return
     summary = pd.DataFrame(summaries).sort_values(["delay", "window", "model"])
-    cohort_frame = pd.DataFrame(cohorts).sort_values(["delay", "window", "cohort", "model"])
+    cohort_frame = pd.DataFrame(cohorts).sort_values(["delay", "window", "cohort", "model"]) if cohorts else pd.DataFrame()
     summary.to_csv(sweep_root / "per_delay_window_summary.csv", index=False)
     cohort_frame.to_csv(sweep_root / "cohort_metrics.csv", index=False)
     aggregate_gains(summary, "M3").to_csv(sweep_root / "per_delay_mean_gains_vs_m3.csv", index=False)
     aggregate_gains(summary, "M3_H_raw").to_csv(sweep_root / "per_delay_mean_gains_vs_history.csv", index=False)
     graph_marginal(summary).to_csv(sweep_root / "delay_graph_marginal_summary.csv", index=False)
-    aggregate_cohort_gains(cohort_frame).to_csv(sweep_root / "critical_cohort_delay_gains.csv", index=False)
+    if not cohort_frame.empty:
+        aggregate_cohort_gains(cohort_frame).to_csv(sweep_root / "critical_cohort_delay_gains.csv", index=False)
+    else:
+        pd.DataFrame().to_csv(sweep_root / "critical_cohort_delay_gains.csv", index=False)
     save_json(sweep_root / "runtime.json", runtimes)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", default="data/raw/ieee_cis")
-    parser.add_argument("--baseline-dir", default="outputs/ieee_green_moderate_100k_v1")
-    parser.add_argument("--adaptive-dir", default="outputs/ieee_green_adaptive_theory_v1")
-    parser.add_argument("--out-dir", default="outputs/ieee_green_final_review_gates_v1")
+    parser.add_argument("--baseline-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/00_moderate_100k_block_causal")
+    parser.add_argument("--adaptive-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/00_adaptive_precision_block_causal")
+    parser.add_argument("--out-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal")
     parser.add_argument("--window-size", type=int, default=100000)
     parser.add_argument("--windows", default="0,1,2,3,4")
     parser.add_argument("--delays", default="0,1,3,7,14")
@@ -385,4 +430,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

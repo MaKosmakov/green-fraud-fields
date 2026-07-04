@@ -42,6 +42,22 @@ def run_window(args: argparse.Namespace, window: int) -> dict:
         force_cache=args.force_data_cache,
     )
     data = full.iloc[window * args.window_size : (window + 1) * args.window_size].reset_index(drop=True)
+    if data.empty:
+        runtime = {
+            "window": window,
+            "seconds": time.time() - started,
+            "rows": 0,
+            "skipped": True,
+            "reason": "window outside available data",
+            "causal_policy": "strict_timestamp_block",
+            "same_timestamp_policy": "block_frozen_t_minus",
+            "label_release_policy": "release_time_strictly_less_than_candidate_timestamp",
+            "random_forest": "not used",
+        }
+        save_json(out / "feature_runtime.json", runtime)
+        status("skipped_empty_window", rows=0)
+        print(json.dumps(runtime, indent=2), flush=True)
+        return runtime
 
     status("base_features", rows=len(data))
     base_started = time.time()
@@ -107,13 +123,14 @@ def main() -> None:
             {
                 "window": window,
                 "runtime_seconds": runtime["seconds"],
-                "base_seconds": runtime["base_seconds"],
-                "green_seconds": runtime["green_seconds"],
+                "base_seconds": runtime.get("base_seconds", 0.0),
+                "green_seconds": runtime.get("green_seconds", 0.0),
                 "rows": runtime["rows"],
-                "base_columns": runtime["base_columns"],
-                "green_edge_solves": runtime["green_runtime"].get("edge_solves"),
-                "green_mean_ego_size": runtime["green_runtime"].get("mean_ego_size"),
-                "green_max_ego_size": runtime["green_runtime"].get("max_ego_size"),
+                "base_columns": runtime.get("base_columns", 0),
+                "skipped": runtime.get("skipped", False),
+                "green_edge_solves": runtime.get("green_runtime", {}).get("edge_solves"),
+                "green_mean_ego_size": runtime.get("green_runtime", {}).get("mean_ego_size"),
+                "green_max_ego_size": runtime.get("green_runtime", {}).get("max_ego_size"),
             }
         )
     pd.DataFrame(rows).to_csv(root / "feature_window_summary.csv", index=False)
@@ -122,4 +139,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

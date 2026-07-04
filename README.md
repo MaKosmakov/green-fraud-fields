@@ -14,7 +14,8 @@ where `H` is released endpoint history, `D` is a nodewise confidence/precision m
 
 ![Causal Green-field scoring scheme](figures/green_field_scheme.png)
 
-The repo is intentionally small. It keeps the package code, tests, final experiment runners, and figures. Raw datasets and generated experiment outputs are not committed.
+The repo is intentionally small. It keeps the package code, tests, final experiment runners, figures, and experiment manifests. Raw datasets and generated experiment outputs are not committed.
+The frozen result manifest is `manifests/ieee_green_block_causal_manifest.json`; it records the settings and result-summary hashes used for the paper tables and figures.
 
 The final code covers:
 
@@ -70,6 +71,7 @@ python scripts/run_green_calibration_check.py
 python scripts/run_green_posterior_uncertainty.py
 python scripts/run_green_warmstart.py
 python scripts/run_green_final_bootstrap_ci.py --replicates 2000
+python scripts/write_green_frozen_manifest.py
 
 # External Elliptic++ checks.
 python scripts/run_ellipticpp_strict_smoke.py
@@ -86,6 +88,9 @@ For a quick synthetic sanity check instead of the full Kaggle data:
 
 ```powershell
 python scripts/make_smoke_ieee_data.py
+python scripts/build_green_block_causal_features.py
+python scripts/build_adaptive_precision_block_causal.py
+python scripts/run_green_review_graph_history.py
 ```
 
 ## Main empirical takeaway
@@ -101,6 +106,7 @@ src/green_fraud_fields/   core graph, history, modeling, and causal feature code
 scripts/                  final experiment runners and figure script
 tests/                    unit tests for causal and Green-field components
 figures/                  committed figures
+manifests/                experiment manifest, result hashes, and environment notes
 ```
 
 ## License

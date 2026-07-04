@@ -38,7 +38,7 @@ def make_plot(output_dir: Path) -> tuple[Path, Path]:
         marker="o",
         markersize=5,
         linewidth=1.4,
-        label="Static Green marginal",
+        label="Standalone Green marginal",
     )
     ax.plot(
         DELAYS,
@@ -48,7 +48,7 @@ def make_plot(output_dir: Path) -> tuple[Path, Path]:
         marker="s",
         markersize=5,
         linewidth=1.9,
-        label="Adaptive two-stage tail",
+        label="Green tail reranker",
     )
     ax.plot(
         DELAYS,
@@ -58,7 +58,7 @@ def make_plot(output_dir: Path) -> tuple[Path, Path]:
         marker="^",
         markersize=5,
         linewidth=1.7,
-        label="Cross-fit logistic tail",
+        label="Cross-fitted Green tail reranker",
     )
 
     ax.axhline(0.0, color="0.25", linestyle=":", linewidth=1.0)
@@ -96,4 +96,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

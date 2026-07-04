@@ -147,6 +147,23 @@ def run_window(args: argparse.Namespace, window: int) -> dict:
     baseline_window = Path(args.baseline_dir) / f"window_{window}"
     adaptive_window = Path(args.adaptive_dir) / f"window_{window}"
     crossfit_window = Path(args.crossfit_dir) / f"window_{window}"
+    required_inputs = [
+        baseline_window / "base_features.parquet",
+        baseline_window / "green_features.parquet",
+        adaptive_window / "precision_weighted_green.parquet",
+    ]
+    missing_inputs = [str(path) for path in required_inputs if not path.exists()]
+    if missing_inputs:
+        runtime = {
+            "seconds": timer.total(),
+            "window": window,
+            "skipped": True,
+            "reason": "missing feature inputs",
+            "missing_inputs": missing_inputs,
+        }
+        save_json(out / "runtime.json", runtime)
+        print(json.dumps(runtime, indent=2), flush=True)
+        return {"summary": [], "cohorts": [], "strata": [], "runtime": runtime}
 
     data = load_ieee_cis_cached(
         args.data_dir,
@@ -155,6 +172,16 @@ def run_window(args: argparse.Namespace, window: int) -> dict:
         force_cache=args.force_data_cache,
     )
     data = data.iloc[window * args.window_size : (window + 1) * args.window_size].reset_index(drop=True)
+    if data.empty:
+        runtime = {
+            "seconds": timer.total(),
+            "window": window,
+            "skipped": True,
+            "reason": "window outside available data",
+        }
+        save_json(out / "runtime.json", runtime)
+        print(json.dumps(runtime, indent=2), flush=True)
+        return {"summary": [], "cohorts": [], "strata": [], "runtime": runtime}
     y = data["isFraud"].to_numpy(int)
     train, valid, test = chronological_split(len(data))
     timer.mark("load_data")
@@ -200,19 +227,29 @@ def run_window(args: argparse.Namespace, window: int) -> dict:
     )
     timer.mark("fit_ablation_models")
 
-    reference = load_reference_predictions(crossfit_window / "predictions_test.parquet")
     expected_ids = data.iloc[test]["TransactionID"].to_numpy()
-    if not np.array_equal(reference["TransactionID"].to_numpy(), expected_ids):
-        raise ValueError(f"Reference predictions for window {window} do not align with the chronological test slice")
-    test_predictions["adaptive_soft"] = reference["score_adaptive_soft_current"].to_numpy(float)
-    test_predictions["adaptive_two_stage"] = reference["score_split_valid_logistic_tail"].to_numpy(float)
-    test_predictions["crossfit_logistic_tail"] = reference["score_crossfit_logistic_tail"].to_numpy(float)
-    reference_selection = {
-        "adaptive_soft": {"source": str(crossfit_window / "predictions_test.parquet"), "test_used_for_selection": False},
-        "adaptive_two_stage": {"source": str(crossfit_window / "predictions_test.parquet"), "test_used_for_selection": False},
-        "crossfit_logistic_tail": {"source": str(crossfit_window / "predictions_test.parquet"), "test_used_for_selection": False},
-    }
-    selection.update(reference_selection)
+    reference_path = crossfit_window / "predictions_test.parquet"
+    reference_loaded = False
+    if reference_path.exists():
+        reference = load_reference_predictions(reference_path)
+        if not np.array_equal(reference["TransactionID"].to_numpy(), expected_ids):
+            raise ValueError(f"Reference predictions for window {window} do not align with the chronological test slice")
+        test_predictions["adaptive_soft"] = reference["score_adaptive_soft_current"].to_numpy(float)
+        test_predictions["adaptive_two_stage"] = reference["score_split_valid_logistic_tail"].to_numpy(float)
+        test_predictions["crossfit_logistic_tail"] = reference["score_crossfit_logistic_tail"].to_numpy(float)
+        reference_selection = {
+            "adaptive_soft": {"source": str(reference_path), "test_used_for_selection": False},
+            "adaptive_two_stage": {"source": str(reference_path), "test_used_for_selection": False},
+            "crossfit_logistic_tail": {"source": str(reference_path), "test_used_for_selection": False},
+        }
+        selection.update(reference_selection)
+        reference_loaded = True
+    else:
+        selection["reference_scores"] = {
+            "source": str(reference_path),
+            "loaded": False,
+            "reason": "optional crossfit/tail reference predictions not found",
+        }
     timer.mark("load_reference_scores")
 
     metrics = {}
@@ -236,7 +273,7 @@ def run_window(args: argparse.Namespace, window: int) -> dict:
         "model_fit_timing": model_timing,
         "uses_cached_dense_exact_green": True,
         "uses_cached_adaptive_precision_green": True,
-        "reference_adaptive_scores_loaded": True,
+        "reference_adaptive_scores_loaded": reference_loaded,
         "no_future_labels": True,
         "test_used_for_selection": False,
         "random_forest": "not used",
@@ -264,6 +301,8 @@ def aggregate_gains(summary: pd.DataFrame, baseline_model: str) -> pd.DataFrame:
             continue
         group = group.set_index("window").sort_index()
         common = group.index.intersection(baseline.index)
+        if len(common) == 0:
+            continue
         out = {"model": model, "baseline": baseline_model, "windows": int(len(common))}
         for metric in METRICS:
             delta = group.loc[common, metric] - baseline.loc[common, metric]
@@ -275,6 +314,8 @@ def aggregate_gains(summary: pd.DataFrame, baseline_model: str) -> pd.DataFrame:
 
 def aggregate_strata(strata: pd.DataFrame, baseline_model: str) -> pd.DataFrame:
     rows = []
+    if strata.empty:
+        return pd.DataFrame()
     for (stratum, model), group in strata.groupby(["stratum", "model"]):
         if model == baseline_model:
             continue
@@ -296,6 +337,8 @@ def aggregate_strata(strata: pd.DataFrame, baseline_model: str) -> pd.DataFrame:
             out[f"mean_gain_{metric}"] = float(delta.mean())
             out[f"win_count_{metric}"] = int((delta > 0).sum())
         rows.append(out)
+    if not rows:
+        return pd.DataFrame()
     return pd.DataFrame(rows).sort_values(["stratum", "mean_gain_precision_at_0.01"], ascending=[True, False])
 
 
@@ -313,6 +356,8 @@ def graph_marginal_summary(summary: pd.DataFrame) -> pd.DataFrame:
         model_rows = summary[summary["model"] == model].set_index("window")
         base_rows = summary[summary["model"] == baseline_model].set_index("window")
         common = model_rows.index.intersection(base_rows.index)
+        if len(common) == 0:
+            continue
         out = {"comparison": comparison, "model": model, "baseline": baseline_model, "windows": int(len(common))}
         for metric in METRICS:
             delta = model_rows.loc[common, metric] - base_rows.loc[common, metric]
@@ -349,6 +394,8 @@ def critical_cohort_graph_margins(cohorts: pd.DataFrame) -> pd.DataFrame:
                 out[f"mean_gain_{metric}"] = float(delta.mean())
                 out[f"win_count_{metric}"] = int((delta > 0).sum())
             rows.append(out)
+    if not rows:
+        return pd.DataFrame()
     return pd.DataFrame(rows).sort_values(["cohort", "mean_gain_precision_at_0.01"], ascending=[True, False])
 
 
@@ -371,9 +418,12 @@ def write_aggregate_outputs(root: Path) -> None:
     for path in sorted(graph_root.glob("window_*/runtime.json")):
         runtimes[path.parent.name] = json.loads(path.read_text(encoding="utf-8"))
 
+    if not summaries:
+        save_json(graph_root / "runtime.json", runtimes)
+        return
     summary = pd.DataFrame(summaries).sort_values(["window", "model"])
-    cohort_frame = pd.DataFrame(cohorts).sort_values(["window", "cohort", "model"])
-    strata = pd.DataFrame(strata_rows).sort_values(["window", "stratum", "model"])
+    cohort_frame = pd.DataFrame(cohorts).sort_values(["window", "cohort", "model"]) if cohorts else pd.DataFrame()
+    strata = pd.DataFrame(strata_rows).sort_values(["window", "stratum", "model"]) if strata_rows else pd.DataFrame()
     summary.to_csv(graph_root / "window_summary.csv", index=False)
     cohort_frame.to_csv(graph_root / "cohort_metrics.csv", index=False)
     strata.to_csv(graph_root / "count_strata_metrics.csv", index=False)
@@ -382,17 +432,23 @@ def write_aggregate_outputs(root: Path) -> None:
     aggregate_gains(summary, "M3").to_csv(graph_root / "mean_gains_vs_m3.csv", index=False)
     aggregate_gains(summary, "M3_H_raw").to_csv(graph_root / "mean_gains_vs_history.csv", index=False)
     graph_marginal_summary(summary).to_csv(graph_root / "graph_marginal_summary.csv", index=False)
-    aggregate_strata(strata, "M3_H_raw").to_csv(graph_root / "count_strata_mean_gains.csv", index=False)
-    critical_cohort_graph_margins(cohort_frame).to_csv(graph_root / "critical_cohort_graph_margins.csv", index=False)
+    if not strata.empty:
+        aggregate_strata(strata, "M3_H_raw").to_csv(graph_root / "count_strata_mean_gains.csv", index=False)
+    else:
+        pd.DataFrame().to_csv(graph_root / "count_strata_mean_gains.csv", index=False)
+    if not cohort_frame.empty:
+        critical_cohort_graph_margins(cohort_frame).to_csv(graph_root / "critical_cohort_graph_margins.csv", index=False)
+    else:
+        pd.DataFrame().to_csv(graph_root / "critical_cohort_graph_margins.csv", index=False)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", default="data/raw/ieee_cis")
-    parser.add_argument("--baseline-dir", default="outputs/ieee_green_moderate_100k_v1")
-    parser.add_argument("--adaptive-dir", default="outputs/ieee_green_adaptive_theory_v1")
+    parser.add_argument("--baseline-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/00_moderate_100k_block_causal")
+    parser.add_argument("--adaptive-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/00_adaptive_precision_block_causal")
     parser.add_argument("--crossfit-dir", default="outputs/ieee_green_crossfit_reranker_v1")
-    parser.add_argument("--out-dir", default="outputs/ieee_green_final_review_gates_v1")
+    parser.add_argument("--out-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal")
     parser.add_argument("--window-size", type=int, default=100000)
     parser.add_argument("--windows", default="0,1,2,3,4")
     parser.add_argument("--delay", type=int, default=0)
@@ -417,4 +473,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
