@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from green_fraud_fields.ieee_cis import chronological_split, load_ieee_cis_cached
-from green_fraud_fields.modeling import evaluate, make_preprocessor, save_json
+from green_fraud_fields.modeling import evaluate, make_preprocessor, pointwise_tail_score, save_json
 from run_green_adaptive_next_round import StageTimer, fit_named_models_cached, stable_model_key
 from run_green_adaptive_theory import add_adaptive_shrinkage
 from run_green_focused_improvements import tuned_soft_mixture
@@ -185,6 +185,7 @@ def crossfit_logistic_tail(
     model_names: list[str],
     summary_cols: list[str],
     fractions: tuple[float, ...],
+    online_causal: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, dict]:
     meta_oof, meta_valid, meta_test = oof_meta_matrices(
         frame, oof_index, valid, test, oof_predictions, valid_predictions, test_predictions, model_names, summary_cols
@@ -199,9 +200,13 @@ def crossfit_logistic_tail(
             continue
         model = LogisticRegression(class_weight="balanced", C=0.5, max_iter=2000, random_state=0)
         model.fit(meta_oof[train_mask], y_oof[train_mask])
-        valid_mask = valid_predictions["M3"] >= np.quantile(valid_predictions["M3"], 1 - fraction)
+        valid_cutoff = float(np.quantile(valid_predictions["M3"], 1 - fraction))
         valid_probability = model.predict_proba(meta_valid)[:, 1]
-        valid_score = rerank(valid_predictions["M3"], valid_probability, valid_mask)
+        if online_causal:
+            valid_score = pointwise_tail_score(valid_predictions["M3"], valid_probability, valid_cutoff)
+        else:
+            valid_mask = valid_predictions["M3"] >= valid_cutoff
+            valid_score = rerank(valid_predictions["M3"], valid_probability, valid_mask)
         metrics = evaluate(y_valid, valid_score)
         key = (metrics["precision_at_0.01"], metrics["precision_at_0.005"], metrics["auc_pr"])
         trials.append({"fraction": fraction, "selection_key": list(key), "validation": metrics})
@@ -216,13 +221,25 @@ def crossfit_logistic_tail(
     _, fraction, model = best
     valid_probability = model.predict_proba(meta_valid)[:, 1]
     test_probability = model.predict_proba(meta_test)[:, 1]
-    valid_mask = valid_predictions["M3"] >= np.quantile(valid_predictions["M3"], 1 - fraction)
-    test_mask = test_predictions["M3"] >= np.quantile(test_predictions["M3"], 1 - fraction)
-    valid_score = rerank(valid_predictions["M3"], valid_probability, valid_mask)
-    test_score = rerank(test_predictions["M3"], test_probability, test_mask)
+    valid_cutoff = float(np.quantile(valid_predictions["M3"], 1 - fraction))
+    if online_causal:
+        valid_score = pointwise_tail_score(valid_predictions["M3"], valid_probability, valid_cutoff)
+        test_score = pointwise_tail_score(test_predictions["M3"], test_probability, valid_cutoff)
+        test_cutoff = valid_cutoff
+        test_region_policy = "validation_threshold_pointwise"
+    else:
+        valid_mask = valid_predictions["M3"] >= valid_cutoff
+        test_cutoff = float(np.quantile(test_predictions["M3"], 1 - fraction))
+        test_mask = test_predictions["M3"] >= test_cutoff
+        valid_score = rerank(valid_predictions["M3"], valid_probability, valid_mask)
+        test_score = rerank(test_predictions["M3"], test_probability, test_mask)
+        test_region_policy = "test_batch_quantile_rank"
     return valid_score, test_score, {
         "selection": "OOF-trained logistic reranker, validation-selected candidate fraction by P@1%, P@0.5%, AUC-PR",
         "candidate_fraction": fraction,
+        "validation_cutoff": valid_cutoff,
+        "test_cutoff": test_cutoff,
+        "test_region_policy": test_region_policy,
         "selection_key": list(best[0]),
         "trials": trials,
         "validation": evaluate(y_valid, valid_score),
@@ -417,6 +434,15 @@ def run_window(args, window: int) -> dict:
     selection["crossfit_logistic_tail"] = xlog_selection
     timer.mark("crossfit_logistic_tail")
 
+    xlog_online_valid, xlog_online_test, xlog_online_selection = crossfit_logistic_tail(
+        frame, y, oof_index, valid, test, oof_predictions, valid_predictions,
+        test_predictions, model_names, summary_cols, fractions, online_causal=True,
+    )
+    valid_predictions["crossfit_logistic_tail_online"] = xlog_online_valid
+    test_predictions["crossfit_logistic_tail_online"] = xlog_online_test
+    selection["crossfit_logistic_tail_online"] = xlog_online_selection
+    timer.mark("crossfit_logistic_tail_online")
+
     xlgb_valid, xlgb_test, xlgb_selection = crossfit_lgbm_tail(
         frame, y, oof_index, valid, test, oof_predictions, valid_predictions, test_predictions, model_names, summary_cols, fractions, args.seed
     )
@@ -437,6 +463,18 @@ def run_window(args, window: int) -> dict:
     test_predictions["split_valid_logistic_tail"] = ref_test
     selection["split_valid_logistic_tail"] = ref_selection
     timer.mark("split_valid_reference_tail")
+
+    ref_online_valid, ref_online_test, ref_online_selection = logistic_tail_reranker(
+        frame, y, valid, test, valid_predictions, test_predictions,
+        ["M3", "H_S", "adaptive_shrinkage", "precision_green_count", "precision_green_sqrt", "adaptive_soft_current"],
+        summary_cols,
+        fractions,
+        online_causal=True,
+    )
+    valid_predictions["split_valid_logistic_tail_online"] = ref_online_valid
+    test_predictions["split_valid_logistic_tail_online"] = ref_online_test
+    selection["split_valid_logistic_tail_online"] = ref_online_selection
+    timer.mark("split_valid_reference_tail_online")
 
     blend_valid, blend_test, blend_selection = tuned_soft_mixture(
         y[valid],
@@ -575,9 +613,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", default="data/raw/ieee_cis")
     parser.add_argument("--data-cache-dir", default="data/processed")
-    parser.add_argument("--baseline-dir", default="outputs/ieee_green_moderate_100k_v1")
-    parser.add_argument("--reference-dir", default="outputs/ieee_green_adaptive_theory_v1")
-    parser.add_argument("--out-dir", default="outputs/ieee_green_crossfit_reranker_v1")
+    parser.add_argument("--baseline-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/00_moderate_100k_block_causal")
+    parser.add_argument("--reference-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/00_adaptive_theory_block_causal")
+    parser.add_argument("--out-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/00_crossfit_reranker_block_causal")
     parser.add_argument("--window-size", type=int, default=100000)
     parser.add_argument("--windows", default="0,1,2,3,4")
     parser.add_argument("--delays", default="0,1,3,7,14")

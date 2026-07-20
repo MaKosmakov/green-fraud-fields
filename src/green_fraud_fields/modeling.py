@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_object_dtype, is_string_dtype
 from lightgbm import LGBMClassifier, early_stopping
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
@@ -19,7 +20,13 @@ from sklearn.preprocessing import OneHotEncoder
 
 
 def make_preprocessor(frame: pd.DataFrame) -> ColumnTransformer:
-    categorical = [c for c in frame if str(frame[c].dtype) in {"object", "string", "category"}]
+    categorical = [
+        column
+        for column in frame
+        if is_object_dtype(frame[column].dtype)
+        or is_string_dtype(frame[column].dtype)
+        or isinstance(frame[column].dtype, pd.CategoricalDtype)
+    ]
     numeric = [c for c in frame if c not in categorical]
     return ColumnTransformer([
         ("numeric", SimpleImputer(strategy="median", add_indicator=True), numeric),
@@ -32,13 +39,37 @@ def make_preprocessor(frame: pd.DataFrame) -> ColumnTransformer:
 
 def alert_metrics(y_true: np.ndarray, prediction: np.ndarray, budget: float) -> dict[str, float]:
     count = max(1, int(len(prediction) * budget))
-    chosen = np.argsort(-prediction)[:count]
+    # Scores from tree ensembles can tie exactly.  Preserve chronological input
+    # order so alert-budget metrics do not depend on NumPy's unstable quicksort.
+    chosen = np.argsort(-prediction, kind="mergesort")[:count]
     positives = float(np.sum(y_true))
     hits = float(np.sum(y_true[chosen]))
     return {
         f"precision_at_{budget:g}": hits / count,
         f"recall_at_{budget:g}": hits / positives if positives else np.nan,
     }
+
+
+def pointwise_tail_score(
+    base: np.ndarray,
+    second: np.ndarray,
+    cutoff: float,
+) -> np.ndarray:
+    """Apply a validation-frozen tail model without test-batch dependence.
+
+    Both inputs are probabilities. Rows below the frozen base cutoff retain
+    their base score; candidate rows are placed above that region and ordered
+    by their second-stage probability. Each output depends only on the current
+    row and a cutoff learned from past validation data.
+    """
+    base = np.asarray(base, dtype=float)
+    second = np.asarray(second, dtype=float)
+    if base.shape != second.shape:
+        raise ValueError("base and second-stage scores must have the same shape")
+    candidate = base >= float(cutoff)
+    score = 0.5 * np.clip(base, 0.0, 1.0)
+    score[candidate] = 0.5 + 0.5 * np.clip(second[candidate], 0.0, 1.0)
+    return score
 
 
 def evaluate(y_true: np.ndarray, prediction: np.ndarray) -> dict[str, float]:

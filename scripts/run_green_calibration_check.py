@@ -21,7 +21,7 @@ MODELS = {
     "M3": "score_M3",
     "M3_H_raw": "score_M3_H_raw",
     "M3_H_raw_S_D": "score_M3_H_raw_S_D",
-    "adaptive_two_stage": "score_adaptive_two_stage",
+    "green_tail_reranker": "score_adaptive_two_stage",
 }
 
 
@@ -35,7 +35,7 @@ def logit_clip(score: np.ndarray, eps: float = 1e-6) -> np.ndarray:
 
 
 def ece_equal_frequency(y: np.ndarray, score: np.ndarray, bins: int = 10) -> tuple[float, list[dict]]:
-    order = np.argsort(score)
+    order = np.argsort(score, kind="mergesort")
     chunks = np.array_split(order, bins)
     total = len(y)
     ece = 0.0
@@ -72,7 +72,7 @@ def calibration_slope_intercept(y: np.ndarray, score: np.ndarray) -> tuple[float
 
 
 def top_tail_rows(y: np.ndarray, score: np.ndarray, budgets: tuple[float, ...]) -> list[dict]:
-    order = np.argsort(-score)
+    order = np.argsort(-score, kind="mergesort")
     rows = []
     for budget in budgets:
         k = max(1, int(len(score) * budget))

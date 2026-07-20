@@ -135,7 +135,7 @@ def paired_bootstrap(
     result = {}
     def p1(labels, scores):
         count = max(1, int(len(scores) * 0.01))
-        return float(np.mean(labels[np.argsort(-scores)[:count]]))
+        return float(np.mean(labels[np.argsort(-scores, kind="mergesort")[:count]]))
     for name, score in alternatives.items():
         values = []
         for _ in range(replicates):

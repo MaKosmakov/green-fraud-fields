@@ -8,10 +8,10 @@ import matplotlib.pyplot as plt
 
 DELAYS = [0, 1, 3, 7, 14]
 
-# Mean AUC-PR gains over raw released history from the block-causal delay sweep.
-STATIC_GREEN = [0.0261, -0.0056, 0.0004, -0.0097, -0.0060]
-ADAPTIVE_TWO_STAGE = [0.1103, 0.0589, 0.0563, 0.0580, 0.0622]
-CROSS_FIT_LOGISTIC_TAIL = [0.1042, 0.0631, 0.0571, 0.0575, 0.0355]
+# Mean average-precision gains over raw released history from the block-causal delay sweep.
+STATIC_GREEN = [0.0202, -0.0210, 0.0164, -0.0059, 0.0060]
+ADAPTIVE_TWO_STAGE = [0.0889, 0.0430, 0.0641, 0.0596, 0.0671]
+CROSS_FIT_LOGISTIC_TAIL = [0.0910, 0.0421, 0.0656, 0.0613, 0.0395]
 
 
 def make_plot(output_dir: Path) -> tuple[Path, Path]:
@@ -63,10 +63,10 @@ def make_plot(output_dir: Path) -> tuple[Path, Path]:
 
     ax.axhline(0.0, color="0.25", linestyle=":", linewidth=1.0)
     ax.set_xlabel("Simulated label-release delay")
-    ax.set_ylabel("Mean AUC-PR gain over raw history")
+    ax.set_ylabel("Mean AP gain over raw history")
     ax.set_xticks(DELAYS)
     ax.set_xlim(min(DELAYS) - 0.5, max(DELAYS) + 0.5)
-    ax.set_ylim(-0.02, 0.12)
+    ax.set_ylim(-0.03, 0.10)
     ax.grid(axis="y", color="0.88", linewidth=0.8)
     ax.legend(frameon=False, loc="upper right")
 
@@ -81,7 +81,7 @@ def make_plot(output_dir: Path) -> tuple[Path, Path]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Reproduce the IEEE-CIS delay-sweep AUC-PR figure.")
+    parser = argparse.ArgumentParser(description="Reproduce the IEEE-CIS delay-sweep average-precision figure.")
     parser.add_argument(
         "--output-dir",
         default="figures",

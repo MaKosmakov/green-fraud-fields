@@ -195,6 +195,7 @@ def run_window(args: argparse.Namespace, window: int) -> dict:
         meta_models,
         meta_cols,
         fractions=(0.025, 0.05, 0.10, 0.20, 0.30),
+        online_causal=True,
     )
     valid_predictions["adaptive_two_stage"] = two_valid
     test_predictions["adaptive_two_stage"] = two_test
@@ -225,6 +226,7 @@ def run_window(args: argparse.Namespace, window: int) -> dict:
             list(model_cols),
             meta_cols,
             fractions=(0.025, 0.05, 0.10, 0.20, 0.30),
+            online_causal=True,
         )
         valid_predictions["crossfit_logistic_tail"] = cross_valid
         test_predictions["crossfit_logistic_tail"] = cross_test

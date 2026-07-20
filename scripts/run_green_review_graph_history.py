@@ -43,12 +43,32 @@ def safe_eval(y_true: np.ndarray, score: np.ndarray) -> dict[str, float] | None:
 
 def load_reference_predictions(path: Path) -> pd.DataFrame:
     predictions = pd.read_parquet(path)
+    if "score_adaptive_soft_current" not in predictions and "score_adaptive_soft" in predictions:
+        predictions["score_adaptive_soft_current"] = predictions["score_adaptive_soft"]
+
+    pointwise_aliases = {
+        "score_adaptive_two_stage_current": (
+            "score_adaptive_two_stage_online",
+            "score_split_valid_logistic_tail_online",
+            "score_adaptive_two_stage",
+            "score_split_valid_logistic_tail",
+        ),
+        "score_crossfit_logistic_tail_current": (
+            "score_crossfit_logistic_tail_online",
+            "score_crossfit_logistic_tail",
+        ),
+    }
+    for target, sources in pointwise_aliases.items():
+        for source in sources:
+            if source in predictions:
+                predictions[target] = predictions[source]
+                break
     required = {
         "TransactionID",
         "isFraud",
         "score_adaptive_soft_current",
-        "score_split_valid_logistic_tail",
-        "score_crossfit_logistic_tail",
+        "score_adaptive_two_stage_current",
+        "score_crossfit_logistic_tail_current",
     }
     missing = sorted(required - set(predictions.columns))
     if missing:
@@ -235,12 +255,20 @@ def run_window(args: argparse.Namespace, window: int) -> dict:
         if not np.array_equal(reference["TransactionID"].to_numpy(), expected_ids):
             raise ValueError(f"Reference predictions for window {window} do not align with the chronological test slice")
         test_predictions["adaptive_soft"] = reference["score_adaptive_soft_current"].to_numpy(float)
-        test_predictions["adaptive_two_stage"] = reference["score_split_valid_logistic_tail"].to_numpy(float)
-        test_predictions["crossfit_logistic_tail"] = reference["score_crossfit_logistic_tail"].to_numpy(float)
+        test_predictions["adaptive_two_stage"] = reference["score_adaptive_two_stage_current"].to_numpy(float)
+        test_predictions["crossfit_logistic_tail"] = reference["score_crossfit_logistic_tail_current"].to_numpy(float)
         reference_selection = {
             "adaptive_soft": {"source": str(reference_path), "test_used_for_selection": False},
-            "adaptive_two_stage": {"source": str(reference_path), "test_used_for_selection": False},
-            "crossfit_logistic_tail": {"source": str(reference_path), "test_used_for_selection": False},
+            "adaptive_two_stage": {
+                "source": str(reference_path),
+                "test_used_for_selection": False,
+                "test_region_policy": "validation_threshold_pointwise",
+            },
+            "crossfit_logistic_tail": {
+                "source": str(reference_path),
+                "test_used_for_selection": False,
+                "test_region_policy": "validation_threshold_pointwise",
+            },
         }
         selection.update(reference_selection)
         reference_loaded = True
@@ -447,7 +475,7 @@ def main() -> None:
     parser.add_argument("--data-dir", default="data/raw/ieee_cis")
     parser.add_argument("--baseline-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/00_moderate_100k_block_causal")
     parser.add_argument("--adaptive-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/00_adaptive_precision_block_causal")
-    parser.add_argument("--crossfit-dir", default="outputs/ieee_green_crossfit_reranker_v1")
+    parser.add_argument("--crossfit-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/02_delay_sweep/delay_0")
     parser.add_argument("--out-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal")
     parser.add_argument("--window-size", type=int, default=100000)
     parser.add_argument("--windows", default="0,1,2,3,4")
