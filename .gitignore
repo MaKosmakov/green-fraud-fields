@@ -11,9 +11,6 @@ dist/
 data/
 outputs/
 
-# Local manuscript files are kept out of the repository for now.
-paper/
-
 # Local LaTeX builds
 *.aux
 *.bbl
@@ -21,3 +18,7 @@ paper/
 *.log
 *.out
 *.synctex.gz
+
+# Superseded local manuscript filenames.
+paper/green_fraud_fields_paper.*
+paper/fig_delay_auc_sweep.pdf
