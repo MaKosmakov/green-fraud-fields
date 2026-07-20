@@ -1,23 +1,21 @@
 {
-  "name": "Adaptive Green Risk Fields v2 block-causal frozen result manifest",
+  "name": "Adaptive Green Risk Fields block-causal final result manifest",
   "causal_policy": "strict_timestamp_block",
-  "same_timestamp_policy": "score_all_rows_in_timestamp_block_before_graph_or_history_update",
-  "label_release_policy": "release_time_strictly_less_than_candidate_timestamp",
-  "dataset": {
-    "primary": "IEEE-CIS Fraud Detection",
-    "window_size": 100000,
-    "windows": [
-      0,
-      1,
-      2,
-      3,
-      4
-    ],
-    "split": {
-      "train_rows": 60000,
-      "validation_rows": 20000,
-      "test_rows": 20000
-    }
+  "same_timestamp_policy": "score timestamp block before graph/history update",
+  "label_release_policy": "release_time < candidate_timestamp",
+  "window_state_policy": "reset graph and released history at each 100k headline window",
+  "alert_tie_policy": "stable chronological arrival order",
+  "windows": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "split_rows": {
+    "train": 60000,
+    "validation": 20000,
+    "test": 20000
   },
   "green_features": {
     "risk_layers": [
@@ -26,11 +24,9 @@
       "card1--DeviceInfo",
       "DeviceInfo--P_emaildomain"
     ],
-    "edge_weight": "unit co-occurrence count accumulated from prior timestamp blocks",
+    "edge_weight": "unit historical co-occurrence count",
     "ego_radius": 2,
     "max_ego_nodes": 100,
-    "cap_semantics": "maximum total nodes retained in the two-root ego graph, including candidate endpoints",
-    "linear_solver": "dense exact Cholesky on capped local graph",
     "plain_green_lambda": 0.1,
     "history_alpha": 5,
     "adaptive_confidence": "d_v = 5 + sqrt(n_v)",
@@ -45,15 +41,42 @@
   "modeling": {
     "random_forest": "not used",
     "lightgbm": {
-      "n_estimators": 500,
-      "learning_rate": 0.05,
-      "num_leaves": 31,
-      "max_depth": -1,
+      "n_estimators_max": 700,
+      "learning_rate": 0.04,
+      "candidate_grid": [
+        {
+          "num_leaves": 15,
+          "min_child_samples": 40,
+          "reg_lambda": 2.0
+        },
+        {
+          "num_leaves": 31,
+          "min_child_samples": 20,
+          "reg_lambda": 1.0
+        },
+        {
+          "num_leaves": 63,
+          "min_child_samples": 30,
+          "reg_lambda": 3.0
+        },
+        {
+          "num_leaves": 31,
+          "min_child_samples": 80,
+          "reg_lambda": 5.0
+        }
+      ],
       "subsample": 0.9,
+      "subsample_freq": 0,
+      "row_bagging_active": false,
       "colsample_bytree": 0.9,
-      "reg_lambda": 1.0,
-      "early_stopping_rounds": 40,
+      "early_stopping_rounds": 50,
       "eval_metric": "average_precision",
+      "selection_key": [
+        "validation P@1%",
+        "validation P@0.5%",
+        "validation P@2%",
+        "validation AUC-PR"
+      ],
       "scale_pos_weight": "computed from training prevalence"
     },
     "tail_candidate_fractions": [
@@ -73,134 +96,138 @@
       "C": 0.5,
       "max_iter": 2000
     },
+    "online_tail_score": {
+      "cutoff_source": "validation only",
+      "noncandidate": "0.5 * base_probability",
+      "candidate": "0.5 + 0.5 * second_stage_probability",
+      "prefix_invariant": true,
+      "test_batch_quantile_or_rank": false
+    },
     "crossfit_oof": {
       "folds": 3,
-      "warmup_fraction": 0.5
+      "warmup_fraction": 0.5,
+      "n_estimators_max": 160,
+      "learning_rate": 0.04,
+      "num_leaves": 31,
+      "min_child_samples": 40,
+      "reg_lambda": 3.0,
+      "early_stopping_rounds": 25
     }
   },
   "diagnostics": {
     "bootstrap": {
       "replicates": 2000,
       "block_size_rows": 500,
-      "resampling": "paired chronological blocks sampled with replacement within each window",
-      "interval": "2.5% and 97.5% percentile quantiles"
+      "interval": "percentile 2.5% and 97.5%"
     },
     "calibration": {
       "ece_bins": 10,
-      "ece_binning": "equal-frequency bins on each test window",
-      "tail_budgets": [
-        0.005,
-        0.01,
-        0.02,
-        0.05
-      ]
+      "ece_binning": "equal-frequency"
     }
   },
   "source_scripts": [
+    "scripts/build_green_block_causal_features.py",
+    "scripts/build_adaptive_precision_block_causal.py",
     "scripts/run_green_review_graph_history.py",
     "scripts/run_green_review_delay_sweep.py",
+    "scripts/rebuild_saved_prediction_metrics.py",
+    "scripts/run_green_leakage_audit.py",
     "scripts/run_green_permutation_placebo.py",
-    "scripts/run_green_final_bootstrap_ci.py",
     "scripts/run_green_calibration_check.py",
-    "scripts/run_green_posterior_uncertainty.py",
+    "scripts/run_green_final_bootstrap_ci.py",
+    "scripts/verify_green_frozen_manifest.py",
     "scripts/plot_delay_auc_sweep.py"
   ],
   "result_files": [
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/01_graph_vs_history/window_summary.csv",
       "relative_to_output_root": "01_graph_vs_history/window_summary.csv",
-      "bytes": 4346,
-      "sha256": "bfad6e85128582cc5b4b236f37d907add482e5c64bd4605bf7e36d1d82c54bbc"
+      "bytes": 4359,
+      "sha256": "ed28f28211dda223061e1627c4e073323c24a3e92dd3fd91e922697041a5f6d0"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/01_graph_vs_history/mean_gains_vs_m3.csv",
       "relative_to_output_root": "01_graph_vs_history/mean_gains_vs_m3.csv",
-      "bytes": 1354,
-      "sha256": "cfa02263073687e60448b9b669d05c8e81a9213d00e649938d19687a37d9d53c"
+      "bytes": 1353,
+      "sha256": "ba078ae6afd84c8c57dc2c712d50f5f78daba0416dd61291f06a1061d4ac68ac"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/01_graph_vs_history/mean_gains_vs_history.csv",
       "relative_to_output_root": "01_graph_vs_history/mean_gains_vs_history.csv",
-      "bytes": 1411,
-      "sha256": "57916b5395735f76788ed42053063df9ec5f778775643cd2d579144d2bc25bd1"
+      "bytes": 1457,
+      "sha256": "868bf21714f9dc9d73e33c5b7b2e02c95fb5d3d33cbeb40d0afb8c5632eea891"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/01_graph_vs_history/graph_marginal_summary.csv",
       "relative_to_output_root": "01_graph_vs_history/graph_marginal_summary.csv",
-      "bytes": 1319,
-      "sha256": "e8478c34b24fd7398f6fdf4f5c40dbe39fa3487babe4e87a551f12663868c787"
+      "bytes": 1410,
+      "sha256": "49bf0c1289a11eaa273951b19e72cc264984bce8fb270fb430c9a3d93e7023e9"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/01_graph_vs_history/count_strata_mean_gains.csv",
       "relative_to_output_root": "01_graph_vs_history/count_strata_mean_gains.csv",
-      "bytes": 5325,
-      "sha256": "4f28d8b49174c46eae9bed3f7c9a4da67469b775b3e88b342b179fa8ead90f3f"
+      "bytes": 5334,
+      "sha256": "8d687d2455aa6ae5fa8145d4ac42490911c009fe1400425234881fe8fa1e274c"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/01_graph_vs_history/critical_cohort_graph_margins.csv",
       "relative_to_output_root": "01_graph_vs_history/critical_cohort_graph_margins.csv",
-      "bytes": 652,
-      "sha256": "78edb1059760203b588e4d49c9ff26962d3877fc8e7803b21024e097bf1bc3d0"
+      "bytes": 650,
+      "sha256": "699572047a84f73005cf1a7e4a04603d81b816d286d8a3f5a7495ff53e22fad9"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/02_delay_sweep/per_delay_window_summary.csv",
       "relative_to_output_root": "02_delay_sweep/per_delay_window_summary.csv",
-      "bytes": 14729,
-      "sha256": "1c6db1431bc415f34c553d4b70028d6dcd2400d97316671b46f5528a5154bf0b"
+      "bytes": 14704,
+      "sha256": "6207cfc21c86ec0407abc1dc769e15389b2389d510ada2eb5ea655b5fb62b807"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/02_delay_sweep/per_delay_mean_gains_vs_m3.csv",
       "relative_to_output_root": "02_delay_sweep/per_delay_mean_gains_vs_m3.csv",
-      "bytes": 3784,
-      "sha256": "4bd7201a94577092041390eeb90401b1c7fc314c9417340d44d32c9ca194d591"
+      "bytes": 3802,
+      "sha256": "50ea24fe0ad8348fb5d5245e529d15ec577b51d4b424711689c6eb0656232139"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/02_delay_sweep/per_delay_mean_gains_vs_history.csv",
       "relative_to_output_root": "02_delay_sweep/per_delay_mean_gains_vs_history.csv",
-      "bytes": 4088,
-      "sha256": "6a45db0cbb014aec09da3a4f68921c8835b712ce6e4f3247141d587d202efead"
+      "bytes": 4017,
+      "sha256": "55b600485db3f8a39425a8df21f5f6f376730f5de41cce9d4ece1610db1f7408"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/02_delay_sweep/delay_graph_marginal_summary.csv",
       "relative_to_output_root": "02_delay_sweep/delay_graph_marginal_summary.csv",
-      "bytes": 3726,
-      "sha256": "c1c9dfc917ce534bf8bc39fd65fcec8136b1256a530547449af8ee7cd34b01b4"
+      "bytes": 3671,
+      "sha256": "08a6f61c0decb2fd751b33a847322986706c86c0aa711201b1cd43d7db097e3d"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/02_delay_sweep/critical_cohort_delay_gains.csv",
       "relative_to_output_root": "02_delay_sweep/critical_cohort_delay_gains.csv",
-      "bytes": 4510,
-      "sha256": "e20e4eea6796e329cdf4fdbedb05a04dfde95f64e1869164c3bead0571654c45"
+      "bytes": 4504,
+      "sha256": "0a29237c50bbdecd18ab6930a3051c9049ec749003d4fe2025515b7a54815cf6"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/03b_permutation_placebo/permutation_placebo_summary.csv",
+      "relative_to_output_root": "03_leakage_audit_final/leakage_audit_results.json",
+      "bytes": 2529,
+      "sha256": "7fa7415b227b6abf0d2bfe3c5e625a17154f658359767936d9e4388b4b9219b2"
+    },
+    {
+      "relative_to_output_root": "03_leakage_audit_final/cache_provenance.csv",
+      "bytes": 13754,
+      "sha256": "d9a0b63da7245eccc98c9227936b6317f5e1ea24ddefd6bb70181da2dc6dbeb1"
+    },
+    {
+      "relative_to_output_root": "03_leakage_audit_final/selection_audit.csv",
+      "bytes": 4222,
+      "sha256": "985e0dae66d1a733124ad7e10b3c48f2b93d9c0038d1101a09ad9b22c0c8694a"
+    },
+    {
       "relative_to_output_root": "03b_permutation_placebo/permutation_placebo_summary.csv",
-      "bytes": 1382,
-      "sha256": "543a0ff01c47da1178d4ff957cd884b6268ede48778056fb45e7dd3d4be19e8d"
+      "bytes": 1394,
+      "sha256": "8729f16b9eb805587081bdb5909bb5622fa69b933574603602c6ac96acbc5056"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/04_calibration_check/calibration_summary.csv",
       "relative_to_output_root": "04_calibration_check/calibration_summary.csv",
-      "bytes": 580,
-      "sha256": "caee17acc643390655b7cfc3ae4bf4ef3a5d474bc120608de6eacb28c5b53e9f"
+      "bytes": 578,
+      "sha256": "9901f50c116170112254d75126e69cebaad2db65c160e8198aa1f0ecc649d615"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/04_calibration_check/top_tail_calibration_summary.csv",
       "relative_to_output_root": "04_calibration_check/top_tail_calibration_summary.csv",
-      "bytes": 1452,
-      "sha256": "86c3b3c01cd49e4d5df38e96405eca2e8329e6eab50c28f2095ad55348162ab0"
+      "bytes": 1456,
+      "sha256": "4b4460f55706db516a2f723806a653107168afffa878666ef89ead684adad081"
     },
     {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/06_final_bootstrap_ci/paired_block_bootstrap_ci.csv",
-      "relative_to_output_root": "06_final_bootstrap_ci/paired_block_bootstrap_ci.csv",
-      "bytes": 7451,
-      "sha256": "f972cc5d8e52413c962917f5072714360c6dedf58f3a10fe2221d67aa17d5ab5"
-    },
-    {
-      "path": "outputs/ieee_green_final_review_gates_v2_block_causal/07_manuscript_consistency_audit/manuscript_number_audit.csv",
-      "relative_to_output_root": "07_manuscript_consistency_audit/manuscript_number_audit.csv",
-      "bytes": 3302,
-      "sha256": "d9f429b6671ddfdaf23ba79388d892eb1e089a705ee2bfdc9f7bb9c8f5737ad3"
+      "relative_to_output_root": "08_online_causal_audit/paired_block_bootstrap_ci.csv",
+      "bytes": 7404,
+      "sha256": "ff20749def9ff13ead884bd93582f2e9d845fa134ea9164c8718c2afb1ad0783"
     }
   ]
 }

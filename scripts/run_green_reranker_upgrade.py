@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from green_fraud_fields.ieee_cis import chronological_split, load_ieee_cis_cached
-from green_fraud_fields.modeling import evaluate, save_json
+from green_fraud_fields.modeling import evaluate, pointwise_tail_score, save_json
 from run_green_adaptive_next_round import StageTimer, fit_named_models_cached
 from run_green_adaptive_theory import add_adaptive_shrinkage, cohort_gate
 from run_green_focused_improvements import selection_key, tuned_soft_mixture
@@ -67,6 +67,7 @@ def logistic_tail_reranker(
     model_names: list[str],
     summary_cols: list[str],
     fractions: tuple[float, ...],
+    online_causal: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, dict]:
     y_valid = y[valid]
     split = len(y_valid) // 2
@@ -75,15 +76,19 @@ def logistic_tail_reranker(
     trials = []
     for fraction in fractions:
         first_base = valid_predictions["M3"][:split]
-        train_mask = first_base >= np.quantile(first_base, 1 - fraction)
+        first_cutoff = float(np.quantile(first_base, 1 - fraction))
+        train_mask = first_base >= first_cutoff
         if np.unique(y_valid[:split][train_mask]).size < 2:
             continue
         model = LogisticRegression(class_weight="balanced", C=0.5, max_iter=2000, random_state=0)
         model.fit(meta_valid[:split][train_mask], y_valid[:split][train_mask])
         second_base = valid_predictions["M3"][split:]
-        second_mask = second_base >= np.quantile(second_base, 1 - fraction)
         probability = model.predict_proba(meta_valid[split:])[:, 1]
-        score = rerank(second_base, probability, second_mask)
+        if online_causal:
+            score = pointwise_tail_score(second_base, probability, first_cutoff)
+        else:
+            second_mask = second_base >= np.quantile(second_base, 1 - fraction)
+            score = rerank(second_base, probability, second_mask)
         metrics = evaluate(y_valid[split:], score)
         key = (metrics["precision_at_0.01"], metrics["precision_at_0.005"], metrics["auc_pr"])
         trials.append({"fraction": fraction, "selection_key": list(key), "validation_half2": metrics})
@@ -96,18 +101,30 @@ def logistic_tail_reranker(
             "test_used_for_selection": False,
         }
     fraction = best[1]
-    train_mask = valid_predictions["M3"] >= np.quantile(valid_predictions["M3"], 1 - fraction)
+    valid_cutoff = float(np.quantile(valid_predictions["M3"], 1 - fraction))
+    train_mask = valid_predictions["M3"] >= valid_cutoff
     final = LogisticRegression(class_weight="balanced", C=0.5, max_iter=2000, random_state=0)
     final.fit(meta_valid[train_mask], y_valid[train_mask])
     valid_probability = final.predict_proba(meta_valid)[:, 1]
     test_probability = final.predict_proba(meta_test)[:, 1]
-    valid_mask = valid_predictions["M3"] >= np.quantile(valid_predictions["M3"], 1 - fraction)
-    test_mask = test_predictions["M3"] >= np.quantile(test_predictions["M3"], 1 - fraction)
-    valid_score = rerank(valid_predictions["M3"], valid_probability, valid_mask)
-    test_score = rerank(test_predictions["M3"], test_probability, test_mask)
+    if online_causal:
+        valid_score = pointwise_tail_score(valid_predictions["M3"], valid_probability, valid_cutoff)
+        test_score = pointwise_tail_score(test_predictions["M3"], test_probability, valid_cutoff)
+        test_cutoff = valid_cutoff
+        test_region_policy = "validation_threshold_pointwise"
+    else:
+        valid_mask = valid_predictions["M3"] >= valid_cutoff
+        test_cutoff = float(np.quantile(test_predictions["M3"], 1 - fraction))
+        test_mask = test_predictions["M3"] >= test_cutoff
+        valid_score = rerank(valid_predictions["M3"], valid_probability, valid_mask)
+        test_score = rerank(test_predictions["M3"], test_probability, test_mask)
+        test_region_policy = "test_batch_quantile_rank"
     return valid_score, test_score, {
         "selection": "validation split-half P@1%, then P@0.5%, then AUC-PR",
         "candidate_fraction": fraction,
+        "validation_cutoff": valid_cutoff,
+        "test_cutoff": test_cutoff,
+        "test_region_policy": test_region_policy,
         "selection_key": list(best[0]),
         "trials": trials,
         "validation": evaluate(y_valid, valid_score),

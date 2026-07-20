@@ -15,7 +15,7 @@ where `H` is released endpoint history, `D` is a nodewise confidence/precision m
 ![Causal Green-field scoring scheme](figures/green_field_scheme.png)
 
 The repo is intentionally small. It keeps the package code, tests, final experiment runners, figures, and experiment manifests. Raw datasets and generated experiment outputs are not committed.
-The frozen result manifest is `manifests/ieee_green_block_causal_manifest.json`; it records the settings and result-summary hashes used for the paper tables and figures.
+The frozen result manifest is `manifests/ieee_green_block_causal_manifest.json`; it records the settings and result-summary hashes used for the reported tables and figures.
 
 The final code covers:
 
@@ -72,6 +72,7 @@ python scripts/run_green_posterior_uncertainty.py
 python scripts/run_green_warmstart.py
 python scripts/run_green_final_bootstrap_ci.py --replicates 2000
 python scripts/write_green_frozen_manifest.py
+python scripts/verify_green_frozen_manifest.py
 
 # External Elliptic++ checks.
 python scripts/run_ellipticpp_strict_smoke.py
@@ -96,6 +97,8 @@ python scripts/run_green_review_graph_history.py
 ## Main empirical takeaway
 
 On IEEE-CIS, adaptive Green-risk features add measurable ranking signal beyond raw released history under strict timestamp-block causality, and tail-ranking models remain positive across simulated label-release delays.
+
+The frozen evaluation uses validation-selected pointwise tail scores and deterministic chronological tie-breaking at alert cutoffs. The standalone graph marginal is more stable for P@1% than for AUC-PR across windows; continuous-state warm-start results are positive but weaker than reset-window results.
 
 On Elliptic++, raw released address history transfers well, but exact local smoothing does not beat the strongest raw-history baseline under the tested address-graph design. We treat that as a useful high-confidence-regime check rather than as a second positive Green-smoothing validation.
 

@@ -188,7 +188,7 @@ def run_delay_window(args: argparse.Namespace, delay: int, window: int) -> dict:
 
     meta_models = ["M3", "M3_H_raw", "M3_H_raw_S_D", "adaptive_soft"]
     meta_cols = summary_columns(hcols, sd_cols)
-    two_valid, two_test, two_selection = logistic_tail_reranker(
+    two_online_valid, two_online_test, two_online_selection = logistic_tail_reranker(
         frame,
         y,
         valid,
@@ -198,11 +198,30 @@ def run_delay_window(args: argparse.Namespace, delay: int, window: int) -> dict:
         meta_models,
         meta_cols,
         fractions=(0.025, 0.05, 0.10, 0.20, 0.30),
+        online_causal=True,
     )
-    valid_predictions["adaptive_two_stage"] = two_valid
-    test_predictions["adaptive_two_stage"] = two_test
-    selection["adaptive_two_stage"] = two_selection
-    timer.mark("adaptive_two_stage")
+    valid_predictions["adaptive_two_stage"] = two_online_valid
+    test_predictions["adaptive_two_stage"] = two_online_test
+    selection["adaptive_two_stage"] = two_online_selection
+    timer.mark("adaptive_two_stage_pointwise")
+
+    if args.include_batch_diagnostics:
+        two_batch_valid, two_batch_test, two_batch_selection = logistic_tail_reranker(
+            frame,
+            y,
+            valid,
+            test,
+            valid_predictions,
+            test_predictions,
+            meta_models,
+            meta_cols,
+            fractions=(0.025, 0.05, 0.10, 0.20, 0.30),
+            online_causal=False,
+        )
+        valid_predictions["adaptive_two_stage_batch_diagnostic"] = two_batch_valid
+        test_predictions["adaptive_two_stage_batch_diagnostic"] = two_batch_test
+        selection["adaptive_two_stage_batch_diagnostic"] = two_batch_selection
+        timer.mark("adaptive_two_stage_batch_diagnostic")
 
     oof_index, oof_predictions, oof_details = oof_base_predictions(
         frame,
@@ -215,7 +234,7 @@ def run_delay_window(args: argparse.Namespace, delay: int, window: int) -> dict:
         cache_dir=out / "oof_prediction_cache",
         force=args.force_oof,
     )
-    cross_valid, cross_test, cross_selection = crossfit_logistic_tail(
+    cross_online_valid, cross_online_test, cross_online_selection = crossfit_logistic_tail(
         frame,
         y,
         oof_index,
@@ -227,12 +246,33 @@ def run_delay_window(args: argparse.Namespace, delay: int, window: int) -> dict:
         list(model_cols),
         meta_cols,
         fractions=(0.025, 0.05, 0.10, 0.20, 0.30),
+        online_causal=True,
     )
-    valid_predictions["crossfit_logistic_tail"] = cross_valid
-    test_predictions["crossfit_logistic_tail"] = cross_test
-    selection["crossfit_logistic_tail"] = cross_selection
+    valid_predictions["crossfit_logistic_tail"] = cross_online_valid
+    test_predictions["crossfit_logistic_tail"] = cross_online_test
+    selection["crossfit_logistic_tail"] = cross_online_selection
     selection["oof_base_predictions"] = oof_details
-    timer.mark("crossfit")
+    timer.mark("crossfit_pointwise")
+
+    if args.include_batch_diagnostics:
+        cross_batch_valid, cross_batch_test, cross_batch_selection = crossfit_logistic_tail(
+            frame,
+            y,
+            oof_index,
+            valid,
+            test,
+            oof_predictions,
+            valid_predictions,
+            test_predictions,
+            list(model_cols),
+            meta_cols,
+            fractions=(0.025, 0.05, 0.10, 0.20, 0.30),
+            online_causal=False,
+        )
+        valid_predictions["crossfit_logistic_tail_batch_diagnostic"] = cross_batch_valid
+        test_predictions["crossfit_logistic_tail_batch_diagnostic"] = cross_batch_test
+        selection["crossfit_logistic_tail_batch_diagnostic"] = cross_batch_selection
+        timer.mark("crossfit_batch_diagnostic")
 
     metrics = {
         name: {"validation": evaluate(y[valid], valid_predictions[name]), "test": evaluate(y[test], test_predictions[name])}
@@ -253,6 +293,8 @@ def run_delay_window(args: argparse.Namespace, delay: int, window: int) -> dict:
         "recomputed_delay_adaptive_precision": not bool(sd_runtime.get("cached") or sd_runtime.get("copied_from_reference")),
         "no_future_labels": True,
         "test_used_for_selection": False,
+        "pointwise_tail_scores": True,
+        "batch_diagnostics_included": bool(args.include_batch_diagnostics),
         "random_forest": "not used",
     }
     save_json(out / "metrics.json", metrics)
@@ -413,6 +455,11 @@ def main() -> None:
     parser.add_argument("--force-oof", action="store_true")
     parser.add_argument("--oof-folds", type=int, default=3)
     parser.add_argument("--oof-warmup-fraction", type=float, default=0.5)
+    parser.add_argument(
+        "--include-batch-diagnostics",
+        action="store_true",
+        help="Also write obsolete test-batch-ranked scores for diagnostics; never use them as paper-grade metrics.",
+    )
     parser.add_argument("--aggregate-existing", action="store_true")
     args = parser.parse_args()
 

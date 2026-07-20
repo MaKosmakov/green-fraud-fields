@@ -27,7 +27,7 @@ from green_fraud_fields.ieee_cis import (
     tabular_features,
     transaction_edge_records,
 )
-from green_fraud_fields.modeling import evaluate, save_json
+from green_fraud_fields.modeling import evaluate, pointwise_tail_score, save_json
 from green_fraud_fields.temporal_features import CausalFeatureBuilder
 from green_fraud_fields.green_risk_field import RISK_LAYERS
 from run_green_adaptive_next_round import StageTimer, fit_named_models_cached
@@ -353,7 +353,10 @@ def crossfit_logistic_tail(
         valid_cutoff = float(np.quantile(valid_predictions["M3"], 1 - fraction))
         valid_mask = valid_predictions["M3"] >= valid_cutoff
         valid_probability = model.predict_proba(meta_valid)[:, 1]
-        valid_score = rerank(valid_predictions["M3"], valid_probability, valid_mask)
+        if threshold_transfer:
+            valid_score = pointwise_tail_score(valid_predictions["M3"], valid_probability, valid_cutoff)
+        else:
+            valid_score = rerank(valid_predictions["M3"], valid_probability, valid_mask)
         metrics = evaluate(y_valid, valid_score)
         key = (metrics["precision_at_0.01"], metrics["precision_at_0.005"], metrics["auc_pr"])
         trials.append(
@@ -385,8 +388,12 @@ def crossfit_logistic_tail(
         test_cutoff = float(np.quantile(test_predictions["M3"], 1 - fraction))
         test_mask = test_predictions["M3"] >= test_cutoff
         policy = "test_batch_top_fraction_label_free_quantile"
-    valid_score = rerank(valid_predictions["M3"], valid_probability, valid_mask)
-    test_score = rerank(test_predictions["M3"], test_probability, test_mask)
+    if threshold_transfer:
+        valid_score = pointwise_tail_score(valid_predictions["M3"], valid_probability, valid_cutoff)
+        test_score = pointwise_tail_score(test_predictions["M3"], test_probability, test_cutoff)
+    else:
+        valid_score = rerank(valid_predictions["M3"], valid_probability, valid_mask)
+        test_score = rerank(test_predictions["M3"], test_probability, test_mask)
     return valid_score, test_score, {
         "selection": "OOF-trained logistic reranker, validation-selected candidate fraction by P@1%, P@0.5%, AUC-PR",
         "candidate_fraction": fraction,

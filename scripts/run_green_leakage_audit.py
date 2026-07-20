@@ -14,12 +14,20 @@ import pyarrow.parquet as pq
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from green_fraud_fields.ieee_cis import build_transaction_edges, chronological_split, load_ieee_cis_cached
-from green_fraud_fields.modeling import save_json
+from green_fraud_fields.ieee_cis import (
+    build_transaction_edges,
+    chronological_split,
+    load_ieee_cis_cached,
+    transaction_edge_records,
+)
 from green_fraud_fields.green_risk_field import RISK_LAYERS
 
 
 RUN_SUBDIR = "03_leakage_audit"
+
+
+def save_json(path: str | Path, payload: dict) -> None:
+    Path(path).write_text(json.dumps(payload, indent=2, allow_nan=True), encoding="utf-8")
 
 
 def parse_ints(value: str) -> tuple[int, ...]:
@@ -75,7 +83,7 @@ def same_timestamp_audit(data: pd.DataFrame, windows: tuple[int, ...], window_si
                 continue
             prior_edges_by_layer = {layer: set() for layer in RISK_LAYERS}
             prior_nodes_by_layer = {layer: set() for layer in RISK_LAYERS}
-            for _, row in group.iterrows():
+            for row in transaction_edge_records(group):
                 row_risky = False
                 for edge in build_transaction_edges(row):
                     if edge.layer not in RISK_LAYERS:
@@ -318,9 +326,9 @@ def selection_audit(args: argparse.Namespace) -> pd.DataFrame:
 
 
 def static_code_audit() -> dict:
-    green_text = Path("src/green_fraud_fields/green_risk_field.py").read_text(encoding="utf-8")
-    adaptive_text = Path("scripts/run_green_adaptive_theory.py").read_text(encoding="utf-8")
-    temporal_text = Path("src/green_fraud_fields/temporal_features.py").read_text(encoding="utf-8")
+    green_text = (ROOT / "src/green_fraud_fields/green_risk_field.py").read_text(encoding="utf-8")
+    adaptive_text = (ROOT / "scripts/run_green_adaptive_theory.py").read_text(encoding="utf-8")
+    temporal_text = (ROOT / "src/green_fraud_fields/temporal_features.py").read_text(encoding="utf-8")
     return {
         "green_builder_has_block_processor": "def process_timestamp_block" in green_text,
         "green_builder_uses_release_before": "state.release_before(now)" in green_text,
@@ -439,16 +447,16 @@ def write_report(out: Path, results: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", default="data/raw/ieee_cis")
-    parser.add_argument("--baseline-dir", default="outputs/ieee_green_moderate_100k_v1")
-    parser.add_argument("--adaptive-dir", default="outputs/ieee_green_adaptive_theory_v1")
-    parser.add_argument("--out-dir", default="outputs/ieee_green_final_review_gates_v1")
+    parser.add_argument("--baseline-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/00_moderate_100k_block_causal")
+    parser.add_argument("--adaptive-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/00_adaptive_theory_block_causal")
+    parser.add_argument("--out-dir", default="outputs/ieee_green_final_review_gates_v2_block_causal/03_leakage_audit_final")
     parser.add_argument("--window-size", type=int, default=100000)
     parser.add_argument("--windows", default="0,1,2,3,4")
     parser.add_argument("--delays", default="0,1,3,7,14")
     parser.add_argument("--alpha", type=int, default=5)
     parser.add_argument("--data-cache-dir", default="data/processed")
     parser.add_argument("--hash-max-bytes", type=int, default=200_000_000)
-    parser.add_argument("--expect-block-causal", action="store_true")
+    parser.add_argument("--expect-block-causal", action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args()
 
     out_root = Path(args.out_dir)
@@ -475,7 +483,10 @@ def main() -> None:
         label_count_pass = bool(label_mismatch.empty)
         same_time_release_events = 0
         same_timestamp_pass = bool(static_pass)
-        cache_pass = bool(cache_readable)
+        cache_pass = bool(
+            cache_readable
+            and provenance.get("block_causal_metadata", pd.Series([False])).fillna(False).all()
+        )
     elif same_timestamp_raw_pass:
         label_audit = label_release_audit(args, data, out)
         label_mismatch = label_audit[(label_audit["row"] != -1) & (label_audit["abs_error"] > 1e-4)]
@@ -503,6 +514,23 @@ def main() -> None:
         cache_pass = cache_readable
 
     strict_causal_pass = same_timestamp_pass and label_count_pass and cache_pass and selection_pass and static_pass
+
+    placebo_path = review_root_from_out_dir(args.out_dir) / "03b_permutation_placebo" / "permutation_placebo_summary.csv"
+    placebo_pass = False
+    if args.expect_block_causal and strict_causal_pass and placebo_path.exists():
+        placebo = pd.read_csv(placebo_path)
+        graph_row = placebo[
+            (placebo["model"] == "M3_H_raw_S_D")
+            & (placebo["baseline"] == "M3_H_raw")
+        ]
+        if len(graph_row) == 1:
+            graph_row = graph_row.iloc[0]
+            placebo_pass = bool(
+                abs(float(graph_row["placebo_mean_gain_auc_pr"]))
+                < 0.25 * abs(float(graph_row["real_mean_gain_auc_pr"]))
+                and float(graph_row["placebo_mean_gain_precision_at_0.01"]) <= 0
+            )
+        placebo.to_csv(out / "permutation_placebo_summary.csv", index=False)
 
     checks = {
         "future_edge_exclusion": {
@@ -550,23 +578,23 @@ def main() -> None:
             ),
         },
         "label_permutation_placebo": {
-            "pass": bool(args.expect_block_causal and strict_causal_pass),
+            "pass": placebo_pass,
             "note": (
-                "Deferred until paper-grade Run 1/Run 2 block-causal reruns exist."
-                if args.expect_block_causal and strict_causal_pass
+                "The adaptive graph marginal collapses under released-label permutation."
+                if placebo_pass
                 else "Skipped because a required causal check failed; per instructions, no further experiment was run."
             ),
         },
     }
-    if strict_causal_pass and args.expect_block_causal:
-        write_placebo_skipped(out, "deferred_until_block_causal_paper_reruns_exist")
-    elif strict_causal_pass:
+    if strict_causal_pass and args.expect_block_causal and not placebo_path.exists():
+        write_placebo_skipped(out, "block_causal_placebo_output_not_found")
+    elif strict_causal_pass and not args.expect_block_causal:
         write_placebo_skipped(out, "not_implemented_in_audit_script")
-    else:
+    elif not strict_causal_pass:
         write_placebo_skipped(out, "skipped_due_failed_causal_check")
 
     results = {
-        "overall_status": "PASS" if strict_causal_pass else "FAIL",
+        "overall_status": "PASS" if strict_causal_pass and placebo_pass else "FAIL",
         "checks": checks,
         "static_code_audit": static,
         "same_timestamp_totals": same_ts.sum(numeric_only=True).to_dict(),
@@ -575,8 +603,8 @@ def main() -> None:
         "selection_files_checked": int(len(selection)),
         "cache_files_checked": int(len(provenance)),
         "key_finding": (
-            "Strict timestamp-block causality checks pass at the builder/code level. Existing legacy caches are not paper-grade unless strict block-causal metadata is present. Paper-grade Run 1/Run 2 must now be regenerated under a new v2 block-causal output root."
-            if strict_causal_pass and args.expect_block_causal
+            "Strict timestamp-block causality, cache provenance, validation/test separation, and the released-label permutation placebo all pass for the frozen block-causal pipeline."
+            if strict_causal_pass and placebo_pass
             else "Audit failed the conservative same-timestamp policy. Existing builders are row-causal and candidate-self-excluding, "
             "but prior transactions with identical TransactionDT can influence later tied transactions in graph/history state. "
             "Per the review-gate instruction, the permutation placebo was not run."
@@ -586,7 +614,7 @@ def main() -> None:
     }
     save_json(out / "leakage_audit_results.json", results)
     write_report(out, results)
-    print(json.dumps(results, indent=2, allow_nan=True))
+    print(json.dumps(results, indent=2, allow_nan=True), flush=True)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from green_fraud_fields.green_risk_field import (
     select_by_validation,
 )
 from green_fraud_fields.laplacian_features import LayerGraph
+from green_fraud_fields.modeling import alert_metrics, make_preprocessor, pointwise_tail_score
 from green_fraud_fields.temporal_features import CausalFeatureBuilder
 
 
@@ -23,6 +24,29 @@ def row(transaction_id, time, label, card=1, addr=10):
         "P_emaildomain": np.nan,
         "DeviceInfo": np.nan,
     })
+
+
+def test_pointwise_tail_score_is_prefix_invariant():
+    base = np.array([0.1, 0.8, 0.6, 0.9])
+    second = np.array([0.2, 0.3, 0.7, 0.4])
+    cutoff = 0.7
+    full = pointwise_tail_score(base, second, cutoff)
+    prefix = pointwise_tail_score(base[:2], second[:2], cutoff)
+    np.testing.assert_allclose(full[:2], prefix)
+    assert full[1] > full[2]
+
+
+def test_alert_metrics_break_score_ties_by_arrival_order():
+    labels = np.array([1, 0, 0, 0])
+    tied_scores = np.ones(4)
+    metrics = alert_metrics(labels, tied_scores, 0.25)
+    assert metrics["precision_at_0.25"] == 1.0
+
+
+def test_preprocessor_accepts_pandas_string_columns():
+    frame = pd.DataFrame({"amount": [1.0, np.nan, 3.0], "device": ["ios", "web", "ios"]})
+    transformed = make_preprocessor(frame).fit_transform(frame)
+    assert transformed.shape[0] == len(frame)
 
 
 def test_delayed_history_never_reads_future_label():

@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from green_fraud_fields.ieee_cis import chronological_split, load_ieee_cis, tabular_features
-from green_fraud_fields.modeling import evaluate, save_json
+from green_fraud_fields.modeling import evaluate, pointwise_tail_score, save_json
 from green_fraud_fields.green_risk_field import GreenRiskFieldBuilder
 from green_fraud_fields.temporal_features import CausalFeatureBuilder
 from run_ieee_tail_specialized import fit_tail_selected, tail_objective
@@ -26,6 +26,7 @@ from run_green_risk_field import base_groups, cohort_metrics, green_columns, pai
 
 
 def rerank(base: np.ndarray, second: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Legacy whole-batch reranker retained for frozen-result reproduction."""
     score = base.copy()
     boundary = np.max(score[~mask]) if (~mask).any() else 0.0
     ranks = pd.Series(second[mask]).rank(method="average", pct=True).to_numpy()

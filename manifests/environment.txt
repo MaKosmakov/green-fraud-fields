@@ -19,3 +19,5 @@ python scripts/make_smoke_ieee_data.py
 python scripts/build_green_block_causal_features.py
 python scripts/build_adaptive_precision_block_causal.py
 python scripts/run_green_review_graph_history.py
+python scripts/write_green_frozen_manifest.py
+python scripts/verify_green_frozen_manifest.py
